@@ -24,6 +24,50 @@ function rollYut() {
   return '도';
 }
 
+// --- 윷놀이 정밀 경로 이동 계산 함수 ---
+function getNextPosition(currentPos, steps) {
+  if (currentPos === 0) {
+    return steps; // 출발
+  }
+
+  let pos = currentPos;
+
+  // 1. 모서리 출발 분기점 처리 (윷판 코스 지름길)
+  if (pos === 5) {
+    // 오른쪽 위 모서리 (대각선 1 시작)
+    pos = 20 + steps; // 21번 칸부터 대각선 진입
+    if (pos > 25) pos = 15 + (pos - 25); // 대각선 빠져나와 왼쪽 아래로
+    return pos;
+  }
+  
+  if (pos === 10) {
+    // 왼쪽 위 모서리 (대각선 2 시작)
+    pos = 25 + steps; // 26번 칸부터 대각선 진입
+    if (pos > 29) pos = 20; // 중앙 지나 우하단으로
+    return pos;
+  }
+
+  if (pos === 23) {
+    // 방아깨비(중앙) 출발 시 지름길 처리
+    return 28 + steps;
+  }
+
+  // 2. 일반 직진 이동 처리
+  for (let i = 0; i < steps; i++) {
+    if (pos === 20) { pos = 15; continue; } // 외곽 한 바퀴 코스 연결
+    if (pos === 25) { pos = 15; continue; } // 대각선1 종료 후 15번 연결
+    if (pos === 29) { pos = 20; continue; } // 대각선2 종료 후 20번(출구) 연결
+    
+    pos++;
+    
+    // 외곽 완주(20번 넘어가면 종료)
+    if (pos > 20 && pos < 21) pos = 30; 
+  }
+
+  if (pos > 29) return 30; // 30: 완주
+  return pos;
+}
+
 io.on('connection', (socket) => {
   socket.on('joinRoom', ({ roomId, nickname }) => {
     socket.join(roomId);
@@ -34,7 +78,7 @@ io.on('connection', (socket) => {
         currentTurnIndex: 0,
         gameStarted: false,
         tokens: {},
-        extraThrow: false // 한 번 더 던질 기회 여부 플래그
+        extraThrow: false
       };
     }
 
@@ -46,7 +90,7 @@ io.on('connection', (socket) => {
     const playerNumber = room.players.length + 1;
     const player = { id: socket.id, nickname, number: playerNumber };
     room.players.push(player);
-    room.tokens[socket.id] = [0, 0, 0, 0]; // 각 말의 위치 (0: 대기 구역)
+    room.tokens[socket.id] = [0, 0, 0, 0]; // 4개 말 보유 (0: 대기 구역)
 
     io.to(roomId).emit('roomState', {
       players: room.players,
@@ -84,7 +128,7 @@ io.on('connection', (socket) => {
 
     const result = rollYut();
     
-    // 모나 윷이 나오면 한 번 더 던질 기회 보여줌
+    // 윷이나 모가 나오면 찬스 부여
     if (result === '윷' || result === '모') {
       room.extraThrow = true;
     }
@@ -107,21 +151,20 @@ io.on('connection', (socket) => {
     const myTokens = room.tokens[socket.id];
     let currentPos = myTokens[tokenIndex];
 
-    // 단순 이동 위치 계산
-    let newPos = (currentPos === 0) ? steps : currentPos + steps;
-    if (newPos > 29) newPos = 30; // 완주 처리
+    // 지름길 반영된 정확한 위치 계산
+    let newPos = getNextPosition(currentPos, steps);
 
     myTokens[tokenIndex] = newPos;
 
     let caughtOpponent = false;
 
-    // 상대방 말 잡기 검사 (완주 칸 30이나 대기 칸 0이 아닌 경우)
+    // 상대방 말 잡기 검사 (대기 0 및 완주 30 제외)
     if (newPos > 0 && newPos < 30) {
       Object.keys(room.tokens).forEach(otherPlayerId => {
         if (otherPlayerId !== socket.id) {
           room.tokens[otherPlayerId].forEach((otherPos, oIdx) => {
             if (otherPos === newPos) {
-              room.tokens[otherPlayerId][oIdx] = 0; // 잡힌 말은 대기소(0)로 복귀
+              room.tokens[otherPlayerId][oIdx] = 0; // 잡힌 말은 대기소(0)로 격하
               caughtOpponent = true;
             }
           });
@@ -129,13 +172,13 @@ io.on('connection', (socket) => {
       });
     }
 
-    // 모, 윷을 던졌거나 상대 말을 잡았으면 한 번 더 기회!
+    // 모/윷을 쳤거나 상대 말을 잡았으면 한 번 더 던짐
     const grantExtraTurn = isYutOrMo || caughtOpponent || room.extraThrow;
 
     if (grantExtraTurn) {
-      room.extraThrow = false; // 보너스 기회 사용 처리
+      room.extraThrow = false; // 보너스 기회 소비
     } else {
-      // 보너스 기회가 없으면 다음 사람에게 턴 넘김
+      // 다음 사람 턴 넘김
       room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
     }
 
