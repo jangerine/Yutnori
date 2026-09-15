@@ -3,50 +3,147 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>온라인 멀티 윷놀이 (2~4인)</title>
+  <title>실시간 윷놀이 (2~4인용)</title>
   <style>
-    body { font-family: 'Arial', sans-serif; text-align: center; background: #eef2f3; margin: 0; padding: 20px; }
-    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    .hidden { display: none; }
-    button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 6px; background: #3498db; color: white; }
-    button:hover { background: #2980b9; }
-    button:disabled { background: #ccc; cursor: not-allowed; }
-    #board { width: 400px; height: 400px; border: 4px solid #333; margin: 20px auto; position: relative; background: #fdf6e3; border-radius: 8px; }
-    .player-list { display: flex; justify-content: space-around; margin-top: 15px; }
-    .player-card { padding: 10px 15px; border-radius: 8px; color: white; font-weight: bold; }
-    #log { margin-top: 15px; font-size: 18px; font-weight: bold; color: #2c3e50; }
+    body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
+    .card { background: white; max-width: 480px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    #result-box { font-size: 28px; font-weight: bold; margin: 20px 0; color: #333; min-height: 40px; }
+    .player-list { text-align: left; background: #fafafa; padding: 10px 15px; border-radius: 8px; border: 1px solid #eee; }
+    .player-item { padding: 5px 0; font-size: 15px; }
+    .active-turn { font-weight: bold; color: #007bff; }
+    #game-area { display: none; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🎲 온라인 멀티 윷놀이 (2~4인)</h1>
 
-    <!-- 대기실 영역 -->
-    <div id="lobby">
-      <input type="text" id="username" placeholder="닉네임 입력" style="padding: 10px; font-size: 16px;">
-      <button onclick="joinGame()">참가하기</button>
-      <p id="player-count">현재 참가자: 0 / 4 (최소 2명 필요)</p>
-      <button id="start-btn" onclick="startGame()" disabled>게임 시작</button>
+  <!-- 입장 영역 -->
+  <div class="card" id="login-area">
+    <h2>🎲 실시간 윷놀이</h2>
+    <p>2인~4인이 함께 플레이할 수 있습니다.</p>
+    <input type="text" id="nickname" placeholder="닉네임 입력" maxlength="8"><br>
+    <input type="text" id="room-id" placeholder="방 코드 (예: room123)"><br>
+    <button onclick="joinRoom()">입장하기</button>
+  </div>
+
+  <!-- 게임 영역 -->
+  <div class="card" id="game-area">
+    <h3 id="room-title">방 코드: </h3>
+    
+    <div class="player-list">
+      <h4>참여한 플레이어 (<span id="player-count">0</span>/4)</h4>
+      <div id="players"></div>
     </div>
 
-    <!-- 게임 플레이 영역 -->
-    <div id="game-area" class="hidden">
-      <div id="turn-info" style="font-size: 20px; font-weight: bold; margin-bottom: 10px;"></div>
-      
-      <div id="board">
-        <p style="padding-top: 180px; color: #888;">[ 윷놀이 판 영역 ]</p>
-      </div>
+    <div id="result-box">대기 중...</div>
 
-      <div>
-        <button onclick="rollYut()">윷 던지기</button>
-      </div>
-
-      <div id="log">게임이 준비되었습니다.</div>
-      <div class="player-list" id="players-display"></div>
+    <div id="controls">
+      <button id="start-btn" onclick="startGame()">게임 시작 (2인 이상)</button>
+      <button id="throw-btn" onclick="throwYut()" style="display:none;">윷 던지기!</button>
     </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js"></script>
+  <script>
+    const socket = io();
+    let myId = null;
+
+    socket.on('connect', () => {
+      myId = socket.id;
+    });
+
+    function joinRoom() {
+      const nickname = document.getElementById('nickname').value.trim();
+      const roomId = document.getElementById('room-id').value.trim();
+
+      if (!roomId) {
+        alert('방 코드를 입력하세요.');
+        return;
+      }
+
+      socket.emit('joinRoom', { roomId, nickname });
+
+      document.getElementById('login-area').style.display = 'none';
+      document.getElementById('game-area').style.display = 'block';
+      document.getElementById('room-title').innerText = `방 코드: ${roomId}`;
+    }
+
+    function startGame() {
+      socket.emit('startGame');
+    }
+
+    function throwYut() {
+      socket.emit('throwYut');
+    }
+
+    // 서버 대기실 업데이트 받기
+    socket.on('roomState', ({ players, currentTurn, gameStarted }) => {
+      updatePlayersUI(players, currentTurn);
+
+      if (!gameStarted) {
+        const isHost = players.length > 0 && players[0].id === myId;
+        document.getElementById('start-btn').style.display = isHost ? 'inline-block' : 'none';
+        document.getElementById('start-btn').disabled = players.length < 2;
+      }
+    });
+
+    // 게임 시작 시
+    socket.on('gameStarted', ({ players, currentTurn }) => {
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('throw-btn').style.display = 'inline-block';
+      document.getElementById('result-box').innerText = '게임을 시작합니다!';
+      updatePlayersUI(players, currentTurn);
+    });
+
+    // 윷 던진 결과
+    socket.on('yutResult', ({ player, result, nextTurn, isBonusTurn }) => {
+      let msg = `${player.nickname} 님의 결과: [ ${result} ]!`;
+      if (isBonusTurn) {
+        msg += ' 🎉 한 번 더 던지세요!';
+      }
+      document.getElementById('result-box').innerText = msg;
+      
+      updateTurnUI(nextTurn);
+    });
+
+    socket.on('errorMsg', (msg) => {
+      alert(msg);
+    });
+
+    function updatePlayersUI(players, currentTurn) {
+      document.getElementById('player-count').innerText = players.length;
+      const listDiv = document.getElementById('players');
+      listDiv.innerHTML = '';
+
+      players.forEach((p, index) => {
+        const isMe = p.id === myId ? ' (나)' : '';
+        const isHost = index === 0 ? ' 👑[방장]' : '';
+        const item = document.createElement('div');
+        item.className = 'player-item';
+        if (currentTurn && p.id === currentTurn.id) {
+          item.classList.add('active-turn');
+        }
+        item.innerText = `${p.number}번. ${p.nickname}${isMe}${isHost}`;
+        listDiv.appendChild(item);
+      });
+
+      updateTurnUI(currentTurn);
+    }
+
+    function updateTurnUI(currentTurn) {
+      if (!currentTurn) return;
+      const throwBtn = document.getElementById('throw-btn');
+      const isMyTurn = currentTurn.id === myId;
+
+      throwBtn.disabled = !isMyTurn;
+      if (isMyTurn) {
+        throwBtn.innerText = '내 턴! 윷 던지기';
+      } else {
+        throwBtn.innerText = `${currentTurn.nickname} 턴 대기 중...`;
+      }
+    }
+  </script>
 </body>
 </html>
