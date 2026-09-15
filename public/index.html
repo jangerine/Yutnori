@@ -64,45 +64,38 @@
     const step = L / 5;
     const center = S + L / 2;
 
-    // --- 윷놀이판 좌표 한 칸씩 땡김 (1번 = 도 자리) ---
     const boardCoords = [
-      { x: 0, y: 0 }, // 0: 대기 구역
-
-      // 1 ~ 4: 오른쪽 변 (1번이 우하단 바로 위 '도' 자리!)
-      { x: S + L, y: S + L - step * 1 }, // 1 (도)
-      { x: S + L, y: S + L - step * 2 }, // 2 (개)
-      { x: S + L, y: S + L - step * 3 }, // 3 (걸)
-      { x: S + L, y: S + L - step * 4 }, // 4 (윷)
-
-      // 5 ~ 9: 위쪽 변 (5번: 우상단 모서리 / 지름길 분기점)
-      { x: S + L,          y: S },          // 5 (모서리)
+      { x: 0, y: 0 },
+      // 1 ~ 4: 도, 개, 걸, 윷
+      { x: S + L, y: S + L - step * 1 },
+      { x: S + L, y: S + L - step * 2 },
+      { x: S + L, y: S + L - step * 3 },
+      { x: S + L, y: S + L - step * 4 },
+      // 5 ~ 9: 모(우상단 모서리), 위쪽 변
+      { x: S + L,          y: S },
       { x: S + L - step * 1, y: S },
       { x: S + L - step * 2, y: S },
       { x: S + L - step * 3, y: S },
       { x: S + L - step * 4, y: S },
-
-      // 10 ~ 14: 왼쪽 변 (10번: 좌상단 모서리 / 지름길 분기점)
-      { x: S, y: S },                       // 10 (모서리)
+      // 10 ~ 14: 왼쪽 변 (10: 좌상단 모서리)
+      { x: S, y: S },
       { x: S, y: S + step * 1 },
       { x: S, y: S + step * 2 },
       { x: S, y: S + step * 3 },
       { x: S, y: S + step * 4 },
-
-      // 15 ~ 19: 아래쪽 변 (15번: 좌하단 모서리)
-      { x: S,            y: S + L },        // 15 (모서리)
+      // 15 ~ 19: 아래쪽 변 (15: 좌하단 모서리)
+      { x: S,            y: S + L },
       { x: S + step * 1, y: S + L },
       { x: S + step * 2, y: S + L },
       { x: S + step * 3, y: S + L },
-      { x: S + step * 4, y: S + L },        // 19 (참먹이)
-
-      // 20 ~ 24: 대각선 1 (5번 우상단 -> 좌하단)
+      { x: S + step * 4, y: S + L },
+      // 20 ~ 24: 대각선 1 (5번 우상단 -> 14번 방향)
       { x: S + L - step * 1,   y: S + step * 1 },
       { x: S + L - step * 1.8, y: S + step * 1.8 },
-      { x: center, y: center },             // 22 (방아깨비/중앙)
+      { x: center, y: center }, // 22: 중앙 (방아깨비)
       { x: S + step * 1.8,     y: S + L - step * 1.8 },
       { x: S + step * 1,       y: S + L - step * 1 },
-
-      // 25 ~ 28: 대각선 2 (10번 좌상단 -> 우하단)
+      // 25 ~ 28: 대각선 2 (10번 좌상단 -> 19번 방향)
       { x: S + step * 1,       y: S + step * 1 },
       { x: S + step * 1.8,     y: S + step * 1.8 },
       { x: S + L - step * 1.8, y: S + L - step * 1.8 },
@@ -182,24 +175,27 @@
       drawBoard();
     });
 
+    // --- 정확한 도착지 미리보기 연산 ---
     function calculateTargetPos(currentPos, steps) {
       if (currentPos === 0) return steps;
       
-      if (currentPos === 5) {
-        let pos = 19 + steps;
-        return pos > 24 ? 14 + (pos - 24) : pos;
-      }
-      if (currentPos === 10) {
-        let pos = 24 + steps;
-        return pos > 28 ? 19 : pos;
-      }
+      if (currentPos === 5) return 19 + steps;
+      if (currentPos === 10) return 24 + steps;
       if (currentPos === 22) {
-        return 26 + steps;
+        let pos = 26 + steps;
+        return pos > 28 ? 19 + (pos - 28) : pos;
       }
 
-      let nextPos = currentPos + steps;
-      if (nextPos >= boardCoords.length) return 30;
-      return nextPos;
+      let pos = currentPos;
+      for (let i = 0; i < steps; i++) {
+        if (pos === 19) { pos = 14; continue; }
+        if (pos === 24) { pos = 14; continue; }
+        if (pos === 28) { pos = 19; continue; }
+        pos++;
+      }
+
+      if (pos > 28) return 30;
+      return pos;
     }
 
     canvas.addEventListener('click', (e) => {
@@ -255,10 +251,8 @@
       ctx.moveTo(S + L, S); ctx.lineTo(S, S + L);
       ctx.stroke();
 
-      // 모서리 큰 거점 점 (5:우상, 10:좌상, 15:좌하, 22:중앙)
       const bigPoints = [5, 10, 15, 22];
 
-      // 윷판 점 그리기 (1번부터 시작, 우하단 모서리는 출발 대기 지점)
       for (let i = 1; i < boardCoords.length; i++) {
         const pt = boardCoords[i];
         const isBig = bigPoints.includes(i);
@@ -273,7 +267,7 @@
         ctx.stroke();
       }
 
-      // 우하단 모서리(출발지점 점 표시)
+      // 우하단 출발 모서리점
       ctx.beginPath();
       ctx.arc(S + L, S + L, 12, 0, Math.PI * 2);
       ctx.fillStyle = '#e67e22';
@@ -282,14 +276,12 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // 대기 구역
       ctx.fillStyle = '#eaeaea';
       ctx.fillRect(10, 360, 340, 55);
       ctx.fillStyle = '#555';
       ctx.font = '12px sans-serif';
       ctx.fillText('대기 중인 말 (클릭하여 선택)', 20, 375);
 
-      // 말 그리기
       playersData.forEach((player) => {
         const pTokens = tokensData[player.id] || [0, 0, 0, 0];
         const color = playerColors[player.number] || '#e74c3c';
