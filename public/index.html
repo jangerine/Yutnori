@@ -56,50 +56,51 @@
     const canvas = document.getElementById('board-canvas');
     const ctx = canvas.getContext('2d');
 
-    // --- 윷놀이판 좌표 정밀 계산 ---
+    // --- 정통 윷놀이판 그리드 계산 (총 29개 점 정밀 구현) ---
     const S = 30;       // 여백
     const L = 300;      // 외곽 한 변 길이
-    const step = L / 5; // 60px 간격
+    const step = L / 5; // 60px 간격 (한 변당 모서리 포함 점 6개씩)
     const center = S + L / 2; // 180 (중앙 방아깨비점)
 
     const boardCoords = [
       { x: 0, y: 0 }, // 0: 대기 구역
 
-      // 1 ~ 5: 오른쪽 변 (우하 출발점 -> 우상 모서리 전)
+      // 1 ~ 5: 오른쪽 변 (우하 출발점 1번 -> 우상 모서리 6번 전)
       { x: S + L, y: S + L },
       { x: S + L, y: S + L - step * 1 },
       { x: S + L, y: S + L - step * 2 },
       { x: S + L, y: S + L - step * 3 },
       { x: S + L, y: S + L - step * 4 },
 
-      // 6 ~ 10: 위쪽 변 (우상 모서리 -> 좌상 모서리 전)
+      // 6 ~ 10: 위쪽 변 (우상 모서리 6번 -> 좌상 모서리 11번 전)
       { x: S + L,          y: S },
       { x: S + L - step * 1, y: S },
       { x: S + L - step * 2, y: S },
       { x: S + L - step * 3, y: S },
       { x: S + L - step * 4, y: S },
 
-      // 11 ~ 15: 왼쪽 변 (좌상 모서리 -> 좌하 모서리 전)
+      // 11 ~ 15: 왼쪽 변 (좌상 모서리 11번 -> 좌하 모서리 16번 전)
       { x: S, y: S },
       { x: S, y: S + step * 1 },
       { x: S, y: S + step * 2 },
       { x: S, y: S + step * 3 },
       { x: S, y: S + step * 4 },
 
-      // 16 ~ 19: 아래쪽 변 (좌하 모서리 -> 우하 출발점 전, 중간 점 3개 포함)
+      // 16 ~ 20: 아래쪽 변 (좌하 모서리 16번 -> 우하 출발점 전, 점 5개 완벽 배치)
       { x: S,            y: S + L },
       { x: S + step * 1, y: S + L },
       { x: S + step * 2, y: S + L },
       { x: S + step * 3, y: S + L },
+      { x: S + step * 4, y: S + L }, // 맨 밑줄 마지막 중간점 추가 완료!
 
-      // 20 ~ 24: 대각선 1 (우상 모서리 6번 -> 좌하 코스)
+      // 21 ~ 25: 대각선 1 (우상 모서리 6번 -> 좌하 코스)
       { x: S + L - step * 1,   y: S + step * 1 },
       { x: S + L - step * 1.8, y: S + step * 1.8 },
-      { x: center, y: center }, // 22: 중앙 (방아깨비)
+      { x: center, y: center }, // 23: 중앙 (방아깨비)
       { x: S + step * 1.8,     y: S + L - step * 1.8 },
       { x: S + step * 1,       y: S + L - step * 1 },
 
-      // 25 ~ 28: 대각선 2 (좌상 모서리 11번 -> 우하 코스)
+      // 26 ~ 29: 대각선 2 (좌상 모서리 11번 -> 우하 코스)
       { x: S + step * 1,       y: S + step * 1 },
       { x: S + step * 1.8,     y: S + step * 1.8 },
       { x: S + L - step * 1.8, y: S + L - step * 1.8 },
@@ -203,8 +204,8 @@
       ctx.moveTo(S + L, S); ctx.lineTo(S, S + L);
       ctx.stroke();
 
-      // 2. 거점 포인트 강조 (4개 모서리: 1, 6, 11, 16 / 중앙: 22)
-      const bigPoints = [1, 6, 11, 16, 22];
+      // 2. 거점 포인트 강조 (4개 모서리: 1, 6, 11, 16 / 중앙: 23)
+      const bigPoints = [1, 6, 11, 16, 23];
 
       for (let i = 1; i < boardCoords.length; i++) {
         const pt = boardCoords[i];
