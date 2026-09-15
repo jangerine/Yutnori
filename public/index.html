@@ -5,40 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>실시간 윷놀이 (2~4인용)</title>
   <style>
-  body { 
-    font-family: 'Noto Sans KR', sans-serif; 
-    text-align: center; 
-    background: #f0f2f5; 
-    margin: 0; 
-    padding: 20px; 
-    /* 드래그 및 파란색 선택 방지 */
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-  }
-  .card { background: white; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-  input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
-  button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
-  button:disabled { background-color: #ccc; cursor: not-allowed; }
-  
-  #board-canvas { 
-    background: #fdf8ec; 
-    border: 3px solid #8b5a2b; 
-    border-radius: 12px; 
-    margin: 10px 0; 
-    cursor: pointer; 
-    /* 터치 및 모바일 터치 하이라이트(파란 잔상) 완전 제거 */
-    -webkit-tap-highlight-color: transparent;
-    outline: none;
-  }
-  
-  #result-box { font-size: 18px; font-weight: bold; margin: 10px 0; color: #333; min-height: 30px; }
-  .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
-  .active-turn { font-weight: bold; color: #007bff; }
-  #game-area { display: none; }
-</style>
-
+    body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
+    .card { background: white; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 10px 0; cursor: pointer; }
+    #result-box { font-size: 18px; font-weight: bold; margin: 10px 0; color: #333; min-height: 30px; }
+    .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
+    .active-turn { font-weight: bold; color: #007bff; }
+    #game-area { display: none; }
+  </style>
 </head>
 <body>
 
@@ -170,10 +147,24 @@
       drawBoard();
     });
 
+    // --- 목적지 칸 경로 계산 함수 (서버 로직과 완전히 동일) ---
     function calculateTargetPos(currentPos, steps) {
-      if (currentPos === 0) return steps;
+      if (currentPos === 0) return steps; // 첫 출발 보정
+      
+      if (currentPos === 5) {
+        let pos = 20 + steps;
+        return pos > 25 ? 15 + (pos - 25) : pos;
+      }
+      if (currentPos === 10) {
+        let pos = 25 + steps;
+        return pos > 29 ? 20 : pos;
+      }
+      if (currentPos === 23) {
+        return 28 + steps;
+      }
+
       let nextPos = currentPos + steps;
-      if (nextPos >= boardCoords.length) return boardCoords.length;
+      if (nextPos >= boardCoords.length) return 30;
       return nextPos;
     }
 
@@ -186,7 +177,7 @@
 
       const myTokens = tokensData[myId] || [0, 0, 0, 0];
 
-      // 1. 말 선택
+      // 1. 이동할 말 선택
       if (selectedTokenIndex === null) {
         for (let tIdx = 0; tIdx < myTokens.length; tIdx++) {
           const pos = myTokens[tIdx];
@@ -201,7 +192,7 @@
           }
         }
       } 
-      // 2. 목적지 점 선택
+      // 2. 목적지 칸 선택
       else {
         if (targetBoardPos !== null && targetBoardPos < boardCoords.length) {
           const targetCoord = boardCoords[targetBoardPos];
@@ -216,7 +207,7 @@
           }
         }
 
-        // 선택 취소/변경
+        // 다른 곳 클릭 시 선택 취소
         selectedTokenIndex = null;
         targetBoardPos = null;
         drawBoard();
