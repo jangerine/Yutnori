@@ -10,10 +10,10 @@ app.use(express.static('public'));
 
 const rooms = {};
 
-// 윷 던지기 확률 계산 함수
+// 윷 던지기 확률 계산
 function rollYut() {
   const results = ['도', '개', '걸', '윷', '모'];
-  const weights = [4, 6, 4, 1, 1]; // 정통 확률
+  const weights = [4, 6, 4, 1, 1];
   const total = weights.reduce((a, b) => a + b, 0);
   let rand = Math.floor(Math.random() * total);
 
@@ -24,45 +24,47 @@ function rollYut() {
   return '도';
 }
 
-// --- 윷놀이 정밀 경로 이동 계산 함수 ---
+// --- 정밀 경로 이동 계산 함수 (지름길 및 첫 출발 완전 보정) ---
 function getNextPosition(currentPos, steps) {
-  // 1. 대기 구역(0)에서 처음 출발할 때 (도:1, 개:2, 걸:3, 윷:4, 모:5)
+  // 1. 대기 구역(0) 출발 보정: 도(1) -> 1번, 개(2) -> 2번, 걸(3) -> 3번...
   if (currentPos === 0) {
     return steps;
   }
 
   let pos = currentPos;
 
-  // 2. 모서리 출발 분기점 처리 (윷판 지름길 진입)
+  // 2. 특수 지름길 코스 진입 연산
+  // [우상단 모서리 (5번 칸) 출발] -> 대각선 1 진입 (21, 22, 23(중앙), 24, 25)
   if (pos === 5) {
-    // 우상단 모서리(5) 출발 -> 대각선 1 진입 (21번부터 시작)
-    pos = 20 + steps; 
-    if (pos > 25) pos = 15 + (pos - 25);
-    return pos;
+    const diagPath1 = [21, 22, 23, 24, 25, 15, 16, 17, 18, 19, 20];
+    const targetIdx = steps - 1;
+    return targetIdx < diagPath1.length ? diagPath1[targetIdx] : 30;
   }
-  
+
+  // [좌상단 모서리 (10번 칸) 출발] -> 대각선 2 진입 (26, 27, 23(중앙), 28, 29)
   if (pos === 10) {
-    // 좌상단 모서리(10) 출발 -> 대각선 2 진입 (26번부터 시작)
-    pos = 25 + steps;
-    if (pos > 29) pos = 20;
-    return pos;
+    const diagPath2 = [26, 27, 23, 28, 29, 20];
+    const targetIdx = steps - 1;
+    return targetIdx < diagPath2.length ? diagPath2[targetIdx] : 30;
   }
 
+  // [중앙 방아깨비 (23번 칸) 출발] -> 우하단 지름길 코스 (28, 29, 20)
   if (pos === 23) {
-    // 중앙 방아깨비(23) 출발 시 지름길 처리
-    return 28 + steps;
+    const centerPath = [28, 29, 20];
+    const targetIdx = steps - 1;
+    return targetIdx < centerPath.length ? centerPath[targetIdx] : 30;
   }
 
-  // 3. 일반 직진 및 외곽 코스 순환
+  // 3. 일반 경로 및 기타 대각선 코스 진행
   for (let i = 0; i < steps; i++) {
-    if (pos === 20) { pos = 15; continue; } // 외곽 한 바퀴 도는 연결
-    if (pos === 25) { pos = 15; continue; } // 대각선 1 종료 후 15번 연결
-    if (pos === 29) { pos = 20; continue; } // 대각선 2 종료 후 20번(출구) 연결
+    if (pos === 20) return 30; // 20번 칸 지나면 완주(30)
+    if (pos === 25) { pos = 15; continue; }
+    if (pos === 29) { pos = 20; continue; }
     
     pos++;
   }
 
-  if (pos > 29) return 30; // 30: 완주
+  if (pos > 29 && pos !== 30) return 30;
   return pos;
 }
 
@@ -88,7 +90,7 @@ io.on('connection', (socket) => {
     const playerNumber = room.players.length + 1;
     const player = { id: socket.id, nickname, number: playerNumber };
     room.players.push(player);
-    room.tokens[socket.id] = [0, 0, 0, 0]; // 4개 말 보유 (0: 대기 구역)
+    room.tokens[socket.id] = [0, 0, 0, 0];
 
     io.to(roomId).emit('roomState', {
       players: room.players,
@@ -126,7 +128,6 @@ io.on('connection', (socket) => {
 
     const result = rollYut();
     
-    // 윷이나 모가 나오면 보너스 찬스
     if (result === '윷' || result === '모') {
       room.extraThrow = true;
     }
@@ -149,20 +150,17 @@ io.on('connection', (socket) => {
     const myTokens = room.tokens[socket.id];
     let currentPos = myTokens[tokenIndex];
 
-    // 정확한 이동 위치 계산 (첫 출발 보정 포함)
     let newPos = getNextPosition(currentPos, steps);
-
     myTokens[tokenIndex] = newPos;
 
     let caughtOpponent = false;
 
-    // 상대방 말 잡기 검사 (대기 0 및 완주 30 제외)
     if (newPos > 0 && newPos < 30) {
       Object.keys(room.tokens).forEach(otherPlayerId => {
         if (otherPlayerId !== socket.id) {
           room.tokens[otherPlayerId].forEach((otherPos, oIdx) => {
             if (otherPos === newPos) {
-              room.tokens[otherPlayerId][oIdx] = 0; // 잡힌 말은 대기소(0)로 복귀
+              room.tokens[otherPlayerId][oIdx] = 0;
               caughtOpponent = true;
             }
           });
@@ -170,13 +168,11 @@ io.on('connection', (socket) => {
       });
     }
 
-    // 모/윷을 던졌거나 상대 말을 잡았으면 한 번 더 던짐
     const grantExtraTurn = isYutOrMo || caughtOpponent || room.extraThrow;
 
     if (grantExtraTurn) {
       room.extraThrow = false;
     } else {
-      // 다음 사람에게 턴 넘김
       room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
     }
 
