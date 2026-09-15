@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>클릭해서 이동하는 실시간 윷놀이</title>
+  <title>실시간 윷놀이 (2~4인용)</title>
   <style>
     body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
-    .card { background: white; max-width: 520px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .card { background: white; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
     button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
     button:disabled { background-color: #ccc; cursor: not-allowed; }
     #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 10px 0; cursor: pointer; }
-    #result-box { font-size: 22px; font-weight: bold; margin: 10px 0; color: #333; min-height: 35px; }
+    #result-box { font-size: 20px; font-weight: bold; margin: 10px 0; color: #333; min-height: 30px; }
     .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
     .active-turn { font-weight: bold; color: #007bff; }
     #game-area { display: none; }
@@ -34,7 +34,7 @@
       <div id="players"></div>
     </div>
 
-    <canvas id="board-canvas" width="400" height="440"></canvas>
+    <canvas id="board-canvas" width="360" height="440"></canvas>
 
     <div id="result-box">대기 중...</div>
 
@@ -56,16 +56,27 @@
     const canvas = document.getElementById('board-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 윷놀이 판 좌표 정의 (0: 대기구역 말 좌표들, 1~29: 판 좌표, 30: 완주)
+    // 정통 윷놀이 판 좌표 정의 (한 변에 모서리 포함 6개 점)
     const boardCoords = [
-      {x: 0, y: 0}, // 0번 위치 (플레이어별 대기소 좌표는 따로 처리)
-      {x: 350, y: 350}, {x: 350, y: 280}, {x: 350, y: 210}, {x: 350, y: 140}, {x: 350, y: 70}, 
-      {x: 350, y: 30},  {x: 280, y: 30},  {x: 210, y: 30},  {x: 140, y: 30},  {x: 70, y: 30},  
-      {x: 30,  y: 30},  {x: 30,  y: 140}, {x: 30,  y: 210}, {x: 30,  y: 280}, {x: 30, y: 350}, 
-      {x: 30,  y: 350}, {x: 140, y: 350}, {x: 210, y: 350}, {x: 280, y: 350},                
-      {x: 300, y: 80},  {x: 250, y: 130}, {x: 190, y: 190}, {x: 130, y: 250}, {x: 80, y: 300}, 
-      {x: 80,  y: 80},  {x: 130, y: 130}, {x: 250, y: 250}, {x: 300, y: 300},                
-      {x: 380, y: 380}
+      {x: 0, y: 0}, // 0: 대기소
+      
+      // 오른쪽 아래(출발) -> 오른쪽 위 (1~5)
+      {x: 340, y: 340}, {x: 340, y: 276}, {x: 340, y: 212}, {x: 340, y: 148}, {x: 340, y: 84}, {x: 340, y: 20},
+      
+      // 오른쪽 위 -> 왼쪽 위 (6~10)
+      {x: 276, y: 20},  {x: 212, y: 20},  {x: 148, y: 20},  {x: 84, y: 20},   {x: 20, y: 20},
+      
+      // 왼쪽 위 -> 왼쪽 아래 (11~15)
+      {x: 20, y: 84},   {x: 20, y: 148},  {x: 20, y: 212},  {x: 20, y: 276},  {x: 20, y: 340},
+      
+      // 왼쪽 아래 -> 오른쪽 아래 (16~19)
+      {x: 84, y: 340},  {x: 148, y: 340}, {x: 212, y: 340}, {x: 276, y: 340},
+      
+      // 대각선 1 (오른쪽 위 -> 왼쪽 아래) (20~24)
+      {x: 287, y: 73},  {x: 234, y: 126}, {x: 180, y: 180}, {x: 126, y: 234}, {x: 73, y: 287},
+      
+      // 대각선 2 (왼쪽 위 -> 오른쪽 아래) (25~28)
+      {x: 73, y: 73},   {x: 126, y: 126}, {x: 234, y: 234}, {x: 287, y: 287}
     ];
 
     const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f'];
@@ -123,7 +134,7 @@
       drawBoard();
     });
 
-    // 판 클릭 시 말 감지 및 이동
+    // 판 클릭 시 말 클릭 감지
     canvas.addEventListener('click', (e) => {
       if (!canMoveToken) return;
 
@@ -132,22 +143,19 @@
       const mouseY = e.clientY - rect.top;
 
       const myTokens = tokensData[myId] || [0, 0, 0, 0];
-      const pIdx = playersData.findIndex(p => p.id === myId);
 
       for (let tIdx = 0; tIdx < myTokens.length; tIdx++) {
         const pos = myTokens[tIdx];
         let tokenPos = { x: 0, y: 0 };
 
         if (pos === 0) {
-          // 대기 구역 위치
-          tokenPos = { x: 50 + tIdx * 30, y: 410 };
-        } else if (pos < 30) {
+          tokenPos = { x: 50 + tIdx * 35, y: 412 };
+        } else if (pos <= 28) {
           tokenPos = boardCoords[pos];
         } else {
-          continue; // 완주한 말
+          continue;
         }
 
-        // 마우스 클릭 위치와 말의 거리 계산 (반경 18px 이내 클릭 감지)
         const dist = Math.hypot(mouseX - tokenPos.x, mouseY - tokenPos.y);
         if (dist <= 18) {
           socket.emit('moveToken', { tokenIndex: tIdx, steps: currentLastResultSteps });
@@ -160,31 +168,39 @@
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 외곽선 및 대각선
-      ctx.strokeStyle = '#b5835a';
-      ctx.lineWidth = 4;
+      const startX = 20, startY = 20, size = 320;
+
+      // 외곽 사각형 및 대각선
+      ctx.strokeStyle = '#8b5a2b';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.strokeRect(30, 30, 320, 320);
-      ctx.moveTo(30, 30); ctx.lineTo(350, 350);
-      ctx.moveTo(350, 30); ctx.lineTo(30, 350);
+      ctx.strokeRect(startX, startY, size, size);
+      ctx.moveTo(startX, startY); ctx.lineTo(startX + size, startY + size);
+      ctx.moveTo(startX + size, startY); ctx.lineTo(startX, startY + size);
       ctx.stroke();
 
-      // 판 위 점 그리기
-      for (let i = 1; i < 30; i++) {
+      // 주요 거점 점 강조 (4개 모서리 및 중앙)
+      const bigPoints = [5, 10, 15, 1, 22];
+
+      for (let i = 1; i <= 28; i++) {
         const pt = boardCoords[i];
+        const isBig = bigPoints.includes(i);
+
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, (i % 5 === 0 || i === 22) ? 14 : 8, 0, Math.PI * 2);
-        ctx.fillStyle = (i % 5 === 0 || i === 22) ? '#e67e22' : '#d2b48c';
+        ctx.arc(pt.x, pt.y, isBig ? 13 : 8, 0, Math.PI * 2);
+        ctx.fillStyle = isBig ? '#e67e22' : '#f39c12';
         ctx.fill();
+        ctx.strokeStyle = '#5d4037';
+        ctx.lineWidth = 2;
         ctx.stroke();
       }
 
-      // 대기 구역 UI 그리기
-      ctx.fillStyle = '#eee';
-      ctx.fillRect(10, 385, 380, 45);
-      ctx.fillStyle = '#666';
+      // 대기 구역
+      ctx.fillStyle = '#eaeaea';
+      ctx.fillRect(10, 380, 340, 50);
+      ctx.fillStyle = '#555';
       ctx.font = '12px sans-serif';
-      ctx.fillText('대기 말 (클릭 시 출발)', 20, 400);
+      ctx.fillText('대기 중인 말 (클릭하여 출발)', 20, 395);
 
       // 플레이어 말 그리기
       playersData.forEach((player, pIdx) => {
@@ -195,30 +211,28 @@
           let x = 0, y = 0;
 
           if (pos === 0) {
-            // 대기실에 배치
-            x = 50 + tIdx * 30;
-            y = 415;
-          } else if (pos < 30) {
+            x = 50 + tIdx * 35;
+            y = 412;
+          } else if (pos <= 28) {
             const coord = boardCoords[pos];
-            x = coord.x + (tIdx * 4 - 6);
-            y = coord.y + (pIdx * 4 - 6);
+            x = coord.x + (tIdx * 3 - 4.5);
+            y = coord.y + (pIdx * 3 - 4.5);
           } else {
-            return; // 완주
+            return;
           }
 
           ctx.beginPath();
-          ctx.arc(x, y, 10, 0, Math.PI * 2);
+          ctx.arc(x, y, 9, 0, Math.PI * 2);
           ctx.fillStyle = color;
           ctx.fill();
           ctx.lineWidth = 2;
           ctx.strokeStyle = '#fff';
           ctx.stroke();
 
-          // 내 말이 이동 가능한 상태면 하이라이트 표시
           if (player.id === myId && canMoveToken) {
             ctx.beginPath();
-            ctx.arc(x, y, 13, 0, Math.PI * 2);
-            ctx.strokeStyle = '#ff0000';
+            ctx.arc(x, y, 12, 0, Math.PI * 2);
+            ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 2;
             ctx.stroke();
           }
