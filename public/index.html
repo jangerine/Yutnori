@@ -3,24 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 윷놀이 (2~4인용)</title>
+  <title>3D 실시간 윷놀이</title>
   <style>
-    body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
-    .card { background: white; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
+    body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
+    .card { background: #2a2a2a; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+    input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #444; }
     button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
-    button:disabled { background-color: #ccc; cursor: not-allowed; }
-    #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 10px 0; cursor: pointer; }
-    #result-box { font-size: 20px; font-weight: bold; margin: 10px 0; color: #333; min-height: 30px; }
-    .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
-    .active-turn { font-weight: bold; color: #007bff; }
+    button:disabled { background-color: #555; cursor: not-allowed; }
+    #canvas-container { width: 100%; height: 400px; margin: 10px 0; border-radius: 12px; overflow: hidden; position: relative; }
+    #result-box { font-size: 20px; font-weight: bold; margin: 10px 0; color: #ffca28; min-height: 30px; }
+    .player-list { text-align: left; background: #333; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
+    .active-turn { font-weight: bold; color: #4fc3f7; }
     #game-area { display: none; }
   </style>
+  <!-- Three.js 및 OrbitControls CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
   <div class="card" id="login-area">
-    <h2>🎲 실시간 윷놀이</h2>
+    <h2>🎲 3D 실시간 윷놀이</h2>
     <input type="text" id="nickname" placeholder="닉네임 입력" maxlength="8"><br>
     <input type="text" id="room-id" placeholder="방 코드 입력"><br>
     <button onclick="joinRoom()">입장하기</button>
@@ -34,7 +37,8 @@
       <div id="players"></div>
     </div>
 
-    <canvas id="board-canvas" width="360" height="430"></canvas>
+    <!-- 3D 렌더링 영역 (마우스 드래그로 화면 회전 가능) -->
+    <div id="canvas-container"></div>
 
     <div id="result-box">대기 중...</div>
 
@@ -53,62 +57,160 @@
     let playersData = [];
     let tokensData = {};
 
-    const canvas = document.getElementById('board-canvas');
-    const ctx = canvas.getContext('2d');
+    // --- 3D 변수 설정 ---
+    let scene, camera, renderer, controls;
+    const nodeMeshes = [];
+    const tokenMeshes = {};
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
 
-    // --- 완벽한 윷놀이판 그리드 계산 (한 변 300px 기준) ---
-    const S = 30;   // 여백 (Top-Left 30, 30)
-    const L = 300;  // 판 크기 (30 ~ 330)
-    const step = L / 5; // 60px 간격 (모서리 사이 점 4개 배치)
-    const center = S + L / 2; // 180 (중앙점)
+    const S = -10, L = 20, step = L / 5, center = 0;
 
-    // 정통 윷놀이판 29개 점 정확한 좌표
-    const boardCoords = [
-      { x: 0, y: 0 }, // 0: 대기 구역
-
-      // 1 ~ 5: 우측 변 (우하 모서리 1번 출발 -> 우상 모서리 6번 전)
-      { x: S + L, y: S + L },
-      { x: S + L, y: S + L - step },
-      { x: S + L, y: S + L - step * 2 },
-      { x: S + L, y: S + L - step * 3 },
-      { x: S + L, y: S + L - step * 4 },
-
-      // 6 ~ 10: 상단 변 (우상 모서리 6번 -> 좌상 모서리 11번 전)
-      { x: S + L,          y: S },
-      { x: S + L - step,   y: S },
-      { x: S + L - step * 2, y: S },
-      { x: S + L - step * 3, y: S },
-      { x: S + L - step * 4, y: S },
-
-      // 11 ~ 15: 좌측 변 (좌상 모서리 11번 -> 좌하 모서리 16번 전)
-      { x: S, y: S },
-      { x: S, y: S + step },
-      { x: S, y: S + step * 2 },
-      { x: S, y: S + step * 3 },
-      { x: S, y: S + step * 4 },
-
-      // 16 ~ 19: 하단 변 (좌하 모서리 16번 -> 우하 출발점 전)
-      { x: S,          y: S + L },
-      { x: S + step,   y: S + L },
-      { x: S + step * 2, y: S + L },
-      { x: S + step * 3, y: S + L },
-
-      // 20 ~ 24: 대각선 1 (우상 모서리 6번 -> 좌하 코스)
-      { x: S + L - step * 1, y: S + step * 1 },
-      { x: S + L - step * 1.8, y: S + step * 1.8 },
-      { x: center, y: center }, // 22: 중앙 (방아깨비)
-      { x: S + step * 1.8, y: S + L - step * 1.8 },
-      { x: S + step * 1, y: S + L - step * 1 },
-
-      // 25 ~ 28: 대각선 2 (좌상 모서리 11번 -> 우하 코스)
-      { x: S + step * 1, y: S + step * 1 },
-      { x: S + step * 1.8, y: S + step * 1.8 },
-      { x: S + L - step * 1.8, y: S + L - step * 1.8 },
-      { x: S + L - step * 1, y: S + L - step * 1 }
+    // 3D 공간 상의 29개 거점 좌표 (X, Z 좌표계 사용)
+    const boardCoords3D = [
+      { x: 0, z: 0 }, // 0: 대기 구역
+      // 1 ~ 5
+      { x: S + L, z: S + L }, { x: S + L, z: S + L - step }, { x: S + L, z: S + L - step*2 }, { x: S + L, z: S + L - step*3 }, { x: S + L, z: S + L - step*4 },
+      // 6 ~ 10
+      { x: S + L, z: S }, { x: S + L - step, z: S }, { x: S + L - step*2, z: S }, { x: S + L - step*3, z: S }, { x: S + L - step*4, z: S },
+      // 11 ~ 15
+      { x: S, z: S }, { x: S, z: S + step }, { x: S, z: S + step*2 }, { x: S, z: S + step*3 }, { x: S, z: S + step*4 },
+      // 16 ~ 20
+      { x: S, z: S + L }, { x: S + step, z: S + L }, { x: S + step*2, z: S + L }, { x: S + step*3, z: S + L }, { x: S + step*4, z: S + L },
+      // 21 ~ 25
+      { x: S + L - step, z: S + step }, { x: S + L - step*1.8, z: S + step*1.8 }, { x: center, z: center }, { x: S + step*1.8, z: S + L - step*1.8 }, { x: S + step, z: S + L - step },
+      // 26 ~ 29
+      { x: S + step, z: S + step }, { x: S + step*1.8, z: S + step*1.8 }, { x: S + L - step*1.8, z: S + L - step*1.8 }, { x: S + L - step, z: S + L - step }
     ];
 
-    const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f'];
+    const playerColorHex = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf1c40f];
 
+    function init3D() {
+      const container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x222222);
+
+      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+      camera.position.set(0, 25, 25);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.shadowMap.enabled = true;
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      // 조명 설정
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(10, 30, 10);
+      dirLight.castShadow = true;
+      scene.add(dirLight);
+
+      // 3D 윷놀이판 바닥 생성
+      const boardGeo = new THREE.BoxGeometry(24, 1, 24);
+      const boardMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
+      const board = new THREE.Mesh(boardGeo, boardMat);
+      board.position.y = -0.5;
+      board.receiveShadow = true;
+      scene.add(board);
+
+      // 29개 3D 거점 노드 생성
+      const bigPoints = [1, 6, 11, 16, 23];
+      for (let i = 1; i < boardCoords3D.length; i++) {
+        const isBig = bigPoints.includes(i);
+        const nodeGeo = new THREE.CylinderGeometry(isBig ? 0.9 : 0.6, isBig ? 0.9 : 0.6, 0.2, 16);
+        const nodeMat = new THREE.MeshStandardMaterial({ color: isBig ? 0xe67e22 : 0xf39c12 });
+        const node = new THREE.Mesh(nodeGeo, nodeMat);
+        node.position.set(boardCoords3D[i].x, 0.1, boardCoords3D[i].z);
+        scene.add(node);
+        nodeMeshes.push(node);
+      }
+
+      // 대기 구역 3D 판 생성
+      const waitGeo = new THREE.BoxGeometry(24, 0.2, 5);
+      const waitMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+      const waitBoard = new THREE.Mesh(waitGeo, waitMat);
+      waitBoard.position.set(0, 0, 15);
+      scene.add(waitBoard);
+
+      window.addEventListener('resize', onWindowResize);
+      renderer.domElement.addEventListener('click', onPointerClick);
+
+      animate();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+      const container = document.getElementById('canvas-container');
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    // 마우스 클릭으로 3D 말 선택 감지
+    function onPointerClick(e) {
+      if (!canMoveToken) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      if (tokenMeshes[myId]) {
+        const intersects = raycaster.intersectObjects(tokenMeshes[myId]);
+        if (intersects.length > 0) {
+          const clickedMesh = intersects[0].object;
+          const tokenIdx = clickedMesh.userData.tokenIndex;
+          socket.emit('moveToken', { tokenIndex: tokenIdx, steps: currentLastResultSteps });
+          canMoveToken = false;
+        }
+      }
+    }
+
+    function update3DTokens() {
+      // 기존 말 메쉬 제거
+      Object.keys(tokenMeshes).forEach(id => {
+        tokenMeshes[id].forEach(mesh => scene.remove(mesh));
+      });
+
+      // 새로운 위치에 3D 말 생성
+      playersData.forEach((player, pIdx) => {
+        const pTokens = tokensData[player.id] || [0, 0, 0, 0];
+        tokenMeshes[player.id] = [];
+
+        pTokens.forEach((pos, tIdx) => {
+          const tokenGeo = new THREE.CylinderGeometry(0.5, 0.7, 1.2, 16);
+          const tokenMat = new THREE.MeshStandardMaterial({ color: playerColorHex[pIdx % 4] });
+          const mesh = new THREE.Mesh(tokenGeo, tokenMat);
+          mesh.castShadow = true;
+          mesh.userData = { playerId: player.id, tokenIndex: tIdx };
+
+          if (pos === 0) {
+            mesh.position.set(-8 + tIdx * 2.5 + (pIdx * 0.5), 0.7, 15);
+          } else if (pos < boardCoords3D.length) {
+            const coord = boardCoords3D[pos];
+            mesh.position.set(coord.x + (tIdx * 0.3 - 0.45), 0.7, coord.z + (pIdx * 0.3 - 0.45));
+          } else {
+            return; // 완주
+          }
+
+          scene.add(mesh);
+          tokenMeshes[player.id].push(mesh);
+        });
+      });
+    }
+
+    // Socket 이벤트 연결
     socket.on('connect', () => { myId = socket.id; });
 
     function joinRoom() {
@@ -120,7 +222,8 @@
       document.getElementById('login-area').style.display = 'none';
       document.getElementById('game-area').style.display = 'block';
       document.getElementById('room-title').innerText = `방 코드: ${roomId}`;
-      drawBoard();
+      
+      init3D();
     }
 
     function startGame() { socket.emit('startGame'); }
@@ -132,7 +235,7 @@
       playersData = players;
       tokensData = tokens;
       updateUI(players, currentTurn);
-      drawBoard();
+      if (scene) update3DTokens();
     });
 
     socket.on('gameStarted', ({ players, currentTurn, tokens }) => {
@@ -142,7 +245,7 @@
       document.getElementById('throw-btn').style.display = 'inline-block';
       document.getElementById('result-box').innerText = '게임을 시작합니다!';
       updateUI(players, currentTurn);
-      drawBoard();
+      if (scene) update3DTokens();
     });
 
     socket.on('yutResult', ({ player, result }) => {
@@ -159,111 +262,8 @@
       tokensData = tokens;
       canMoveToken = false;
       updateUI(playersData, nextTurn);
-      drawBoard();
+      update3DTokens();
     });
-
-    canvas.addEventListener('click', (e) => {
-      if (!canMoveToken) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      const myTokens = tokensData[myId] || [0, 0, 0, 0];
-
-      for (let tIdx = 0; tIdx < myTokens.length; tIdx++) {
-        const pos = myTokens[tIdx];
-        let tokenPos = { x: 0, y: 0 };
-
-        if (pos === 0) {
-          tokenPos = { x: 50 + tIdx * 35, y: 395 };
-        } else if (pos <= 28) {
-          tokenPos = boardCoords[pos];
-        } else {
-          continue;
-        }
-
-        const dist = Math.hypot(mouseX - tokenPos.x, mouseY - tokenPos.y);
-        if (dist <= 18) {
-          socket.emit('moveToken', { tokenIndex: tIdx, steps: currentLastResultSteps });
-          canMoveToken = false;
-          break;
-        }
-      }
-    });
-
-    function drawBoard() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // 1. 외곽 사각형 및 대각선
-      ctx.strokeStyle = '#8b5a2b';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.strokeRect(S, S, L, L);
-      ctx.moveTo(S, S); ctx.lineTo(S + L, S + L);
-      ctx.moveTo(S + L, S); ctx.lineTo(S, S + L);
-      ctx.stroke();
-
-      // 2. 윷놀이판 거점 포인트 강조 (4개 모서리: 1, 6, 11, 16 / 중앙: 22)
-      const bigPoints = [1, 6, 11, 16, 22];
-
-      for (let i = 1; i <= 28; i++) {
-        const pt = boardCoords[i];
-        const isBig = bigPoints.includes(i);
-
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, isBig ? 12 : 8, 0, Math.PI * 2);
-        ctx.fillStyle = isBig ? '#e67e22' : '#f39c12';
-        ctx.fill();
-        ctx.strokeStyle = '#5d4037';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-
-      // 3. 하단 대기 말 구역
-      ctx.fillStyle = '#eaeaea';
-      ctx.fillRect(10, 360, 340, 55);
-      ctx.fillStyle = '#555';
-      ctx.font = '12px sans-serif';
-      ctx.fillText('대기 중인 말 (클릭하여 출발)', 20, 375);
-
-      // 4. 플레이어 말 그리기
-      playersData.forEach((player, pIdx) => {
-        const pTokens = tokensData[player.id] || [0, 0, 0, 0];
-        const color = playerColors[pIdx % 4];
-
-        pTokens.forEach((pos, tIdx) => {
-          let x = 0, y = 0;
-
-          if (pos === 0) {
-            x = 50 + tIdx * 35;
-            y = 395;
-          } else if (pos <= 28) {
-            const coord = boardCoords[pos];
-            x = coord.x + (tIdx * 3 - 4.5);
-            y = coord.y + (pIdx * 3 - 4.5);
-          } else {
-            return;
-          }
-
-          ctx.beginPath();
-          ctx.arc(x, y, 9, 0, Math.PI * 2);
-          ctx.fillStyle = color;
-          ctx.fill();
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = '#fff';
-          ctx.stroke();
-
-          if (player.id === myId && canMoveToken) {
-            ctx.beginPath();
-            ctx.arc(x, y, 12, 0, Math.PI * 2);
-            ctx.strokeStyle = '#e74c3c';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          }
-        });
-      });
-    }
 
     function updateUI(players, currentTurn) {
       document.getElementById('player-count').innerText = players.length;
