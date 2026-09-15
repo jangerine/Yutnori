@@ -11,119 +11,140 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 플레이어 정보 및 상태 관리
-let players = []; // { id, name, color, pieces: Array(4) }
-let currentTurnIndex = 0;
-let gameStarted = false;
-let lastRoll = null;
+// 방 상태 저장 객체
+const rooms = {};
 
-const PLAYER_COLORS = ['#FF4D4D', '#4D79FF', '#4DFF4D', '#FFD700']; // 1~4번 플레이어 색상
+const YUT_TYPES = ['도', '개', '걸', '윷', '모'];
+const YUT_WEIGHTS = [1, 3, 3, 1, 1];
+
+function getRandomYut() {
+  const list = [];
+  YUT_TYPES.forEach((type, idx) => {
+    for (let i = 0; i < YUT_WEIGHTS[idx]; i++) list.push(type);
+  });
+  return list[Math.floor(Math.random() * list.length)];
+}
 
 io.on('connection', (socket) => {
-  console.log(`사용자 접속: ${socket.id}`);
+  let currentRoom = null;
 
-  // 접속 상태 전송
-  socket.emit('init-state', {
-    players,
-    gameStarted,
-    currentTurnIndex,
-    myId: socket.id
-  });
+  // 방 참가/생성
+  socket.on('joinRoom', ({ roomId, nickname }) => {
+    if (!roomId) return;
 
-  // 게임 참가 요청
-  socket.on('join-game', (name) => {
-    if (gameStarted) {
-      socket.emit('error-msg', '이미 게임이 진행 중입니다.');
-      return;
-    }
-    if (players.length >= 4) {
-      socket.emit('error-msg', '방이 가득 찼습니다. (최대 4인)');
-      return;
+    if (!rooms[roomId]) {
+      rooms[roomId] = {
+        players: [],
+        turnIndex: 0,
+        gameStarted: false,
+      };
     }
 
+    const room = rooms[roomId];
+
+    if (room.players.length >= 4) {
+      socket.emit('errorMsg', '방이 가득 찼습니다. (최대 4인)');
+      return;
+    }
+
+    if (room.gameStarted) {
+      socket.emit('errorMsg', '이미 게임이 시작되었습니다.');
+      return;
+    }
+
+    const playerNumber = room.players.length + 1;
     const player = {
       id: socket.id,
-      name: name || `플레이어 ${players.length + 1}`,
-      color: PLAYER_COLORS[players.length],
-      // 각 말의 위치 (0: 대기 중, 1~29: 판 위치, 30: 완주)
-      pieces: [0, 0, 0, 0] 
+      nickname: nickname || `플레이어 ${playerNumber}`,
+      number: playerNumber
     };
 
-    players.push(player);
-    io.emit('players-updated', players);
+    room.players.push(player);
+    socket.join(roomId);
+    currentRoom = roomId;
+
+    io.to(roomId).emit('roomState', {
+      players: room.players,
+      currentTurn: room.players[room.turnIndex],
+      gameStarted: room.gameStarted
+    });
   });
 
-  // 게임 시작 요청 (최소 2인 이상)
-  socket.on('start-game', () => {
-    if (players.length < 2) {
-      socket.emit('error-msg', '최소 2명 이상 참여해야 게임을 시작할 수 있습니다.');
+  // 게임 시작 (2인 이상시 방장이 시작)
+  socket.on('startGame', () => {
+    if (!currentRoom || !rooms[currentRoom]) return;
+    const room = rooms[currentRoom];
+
+    if (room.players[0].id !== socket.id) {
+      socket.emit('errorMsg', '방장만 게임을 시작할 수 있습니다.');
       return;
     }
-    gameStarted = true;
-    currentTurnIndex = 0;
-    io.emit('game-started', { players, currentTurnIndex });
+
+    if (room.players.length < 2) {
+      socket.emit('errorMsg', '최소 2명이 참여해야 시작할 수 있습니다.');
+      return;
+    }
+
+    room.gameStarted = true;
+    room.turnIndex = 0;
+
+    io.to(currentRoom).emit('gameStarted', {
+      players: room.players,
+      currentTurn: room.players[room.turnIndex]
+    });
   });
 
   // 윷 던지기
-  socket.on('roll-yut', () => {
-    if (!gameStarted) return;
-    if (players[currentTurnIndex].id !== socket.id) {
-      socket.emit('error-msg', '당신의 순서가 아닙니다!');
+  socket.on('throwYut', () => {
+    if (!currentRoom || !rooms[currentRoom]) return;
+    const room = rooms[currentRoom];
+
+    if (!room.gameStarted) return;
+    const currentPlayer = room.players[room.turnIndex];
+
+    if (currentPlayer.id !== socket.id) {
+      socket.emit('errorMsg', '당신의 순서가 아닙니다!');
       return;
     }
 
-    const outcomes = ['도', '개', '걸', '윷', '모', '빽도'];
-    const weights = [3, 6, 4, 1, 1, 1]; // 가중치
-    const expanded = [];
-    outcomes.forEach((val, idx) => {
-      for (let i = 0; i < weights[idx]; i++) expanded.push(val);
-    });
+    const result = getRandomYut();
 
-    const result = expanded[Math.floor(Math.random() * expanded.length)];
-    lastRoll = result;
+    // '윷'이나 '모'가 나오면 한 번 더 턴 유지, 그 외에는 다음 사람 턴
+    const isBonusTurn = result === '윷' || result === '모';
+    if (!isBonusTurn) {
+      room.turnIndex = (room.turnIndex + 1) % room.players.length;
+    }
 
-    io.emit('yut-rolled', {
-      playerName: players[currentTurnIndex].name,
-      result: result
+    io.to(currentRoom).emit('yutResult', {
+      player: currentPlayer,
+      result: result,
+      nextTurn: room.players[room.turnIndex],
+      isBonusTurn: isBonusTurn
     });
   });
 
-  // 말 이동 처리 및 턴 넘기기
-  socket.on('move-piece', ({ pieceIndex, steps }) => {
-    if (!gameStarted) return;
-    if (players[currentTurnIndex].id !== socket.id) return;
-
-    const currentPlayer = players[currentTurnIndex];
-    let currentPos = currentPlayer.pieces[pieceIndex];
-
-    // 말 위치 단순 이동 계산 (1~29 범위)
-    if (currentPos < 30) {
-      currentPos += steps;
-      if (currentPos >= 30) currentPos = 30; // 완주
-      currentPlayer.pieces[pieceIndex] = currentPos;
-    }
-
-    // 다음 턴 지정 (윷, 모가 아니면 순서 변경)
-    if (lastRoll !== '윷' && lastRoll !== '모') {
-      currentTurnIndex = (currentTurnIndex + 1) % players.length;
-    }
-
-    io.emit('state-updated', {
-      players,
-      currentTurnIndex
-    });
-  });
-
-  // 접속 해제 시 처리
+  // 연결 해제
   socket.on('disconnect', () => {
-    players = players.filter((p) => p.id !== socket.id);
-    if (players.length < 2) {
-      gameStarted = false;
+    if (currentRoom && rooms[currentRoom]) {
+      const room = rooms[currentRoom];
+      room.players = room.players.filter(p => p.id !== socket.id);
+
+      if (room.players.length === 0) {
+        delete rooms[currentRoom];
+      } else {
+        if (room.turnIndex >= room.players.length) {
+          room.turnIndex = 0;
+        }
+        io.to(currentRoom).emit('roomState', {
+          players: room.players,
+          currentTurn: room.players[room.turnIndex],
+          gameStarted: room.gameStarted
+        });
+      }
     }
-    io.emit('players-updated', players);
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
