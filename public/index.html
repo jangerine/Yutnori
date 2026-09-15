@@ -3,33 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>온라인 윷놀이</title>
+  <title>온라인 멀티 윷놀이 (2~4인)</title>
   <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; }
-    .card { background: white; padding: 20px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    button { padding: 12px 24px; font-size: 18px; border: none; background-color: #4CAF50; color: white; border-radius: 6px; cursor: pointer; }
-    button:hover { background-color: #45a049; }
-    #result { font-size: 32px; font-weight: bold; margin-top: 20px; color: #333; }
+    body { font-family: 'Arial', sans-serif; text-align: center; background: #eef2f3; margin: 0; padding: 20px; }
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .hidden { display: none; }
+    button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 6px; background: #3498db; color: white; }
+    button:hover { background: #2980b9; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    #board { width: 400px; height: 400px; border: 4px solid #333; margin: 20px auto; position: relative; background: #fdf6e3; border-radius: 8px; }
+    .player-list { display: flex; justify-content: space-around; margin-top: 15px; }
+    .player-card { padding: 10px 15px; border-radius: 8px; color: white; font-weight: bold; }
+    #log { margin-top: 15px; font-size: 18px; font-weight: bold; color: #2c3e50; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>🎲 윷놀이 던지기</h1>
-    <button onclick="throwYut()">윷 던지기</button>
-    <div id="result">윷을 던져주세요!</div>
+  <div class="container">
+    <h1>🎲 온라인 멀티 윷놀이 (2~4인)</h1>
+
+    <!-- 대기실 영역 -->
+    <div id="lobby">
+      <input type="text" id="username" placeholder="닉네임 입력" style="padding: 10px; font-size: 16px;">
+      <button onclick="joinGame()">참가하기</button>
+      <p id="player-count">현재 참가자: 0 / 4 (최소 2명 필요)</p>
+      <button id="start-btn" onclick="startGame()" disabled>게임 시작</button>
+    </div>
+
+    <!-- 게임 플레이 영역 -->
+    <div id="game-area" class="hidden">
+      <div id="turn-info" style="font-size: 20px; font-weight: bold; margin-bottom: 10px;"></div>
+      
+      <div id="board">
+        <p style="padding-top: 180px; color: #888;">[ 윷놀이 판 영역 ]</p>
+      </div>
+
+      <div>
+        <button onclick="rollYut()">윷 던지기</button>
+      </div>
+
+      <div id="log">게임이 준비되었습니다.</div>
+      <div class="player-list" id="players-display"></div>
+    </div>
   </div>
 
-  <script>
-    function throwYut() {
-      const outcomes = ['도', '개', '걸', '윷', '모'];
-      const weights = [1, 3, 3, 1, 1]; // 확률 가중치
-      const expanded = [];
-      outcomes.forEach((val, idx) => {
-        for (let i = 0; i < weights[idx]; i++) expanded.push(val);
-      });
-      const result = expanded[Math.floor(Math.random() * expanded.length)];
-      document.getElementById('result').innerText = `결과: ${result}!`;
-    }
-  </script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
