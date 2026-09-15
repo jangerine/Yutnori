@@ -3,25 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 윷놀이 판 & 말 포함</title>
+  <title>클릭해서 이동하는 실시간 윷놀이</title>
   <style>
     body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
     .card { background: white; max-width: 520px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
     button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
     button:disabled { background-color: #ccc; cursor: not-allowed; }
-    #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 15px 0; }
-    #result-box { font-size: 24px; font-weight: bold; margin: 10px 0; color: #333; min-height: 35px; }
+    #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 10px 0; cursor: pointer; }
+    #result-box { font-size: 22px; font-weight: bold; margin: 10px 0; color: #333; min-height: 35px; }
     .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
     .active-turn { font-weight: bold; color: #007bff; }
-    .token-btns { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
-    .token-btn { background: #007bff; padding: 8px 12px; font-size: 14px; }
     #game-area { display: none; }
   </style>
 </head>
 <body>
 
-  <!-- 로그인 화면 -->
   <div class="card" id="login-area">
     <h2>🎲 실시간 윷놀이</h2>
     <input type="text" id="nickname" placeholder="닉네임 입력" maxlength="8"><br>
@@ -29,7 +26,6 @@
     <button onclick="joinRoom()">입장하기</button>
   </div>
 
-  <!-- 게임 화면 -->
   <div class="card" id="game-area">
     <h3 id="room-title">방 코드: </h3>
     
@@ -38,25 +34,13 @@
       <div id="players"></div>
     </div>
 
-    <!-- 윷놀이 판 Canvas -->
-    <canvas id="board-canvas" width="400" height="400"></canvas>
+    <canvas id="board-canvas" width="400" height="440"></canvas>
 
     <div id="result-box">대기 중...</div>
 
     <div id="controls">
       <button id="start-btn" onclick="startGame()">게임 시작 (2인 이상)</button>
       <button id="throw-btn" onclick="throwYut()" style="display:none;">윷 던지기!</button>
-    </div>
-
-    <!-- 말 선택 이동 버튼 -->
-    <div id="token-select-area" style="display:none;">
-      <p style="margin:5px 0; font-size:14px; color:#666;">이동할 말을 선택하세요:</p>
-      <div class="token-btns">
-        <button class="token-btn" onclick="selectTokenToMove(0)">말 1</button>
-        <button class="token-btn" onclick="selectTokenToMove(1)">말 2</button>
-        <button class="token-btn" onclick="selectTokenToMove(2)">말 3</button>
-        <button class="token-btn" onclick="selectTokenToMove(3)">말 4</button>
-      </div>
     </div>
   </div>
 
@@ -65,21 +49,23 @@
     const socket = io();
     let myId = null;
     let currentLastResultSteps = 0;
+    let canMoveToken = false;
     let playersData = [];
     let tokensData = {};
 
     const canvas = document.getElementById('board-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 윷놀이 판 좌표 정의 (30개 주요 위치)
+    // 윷놀이 판 좌표 정의 (0: 대기구역 말 좌표들, 1~29: 판 좌표, 30: 완주)
     const boardCoords = [
-      {x: 350, y: 350}, {x: 350, y: 280}, {x: 350, y: 210}, {x: 350, y: 140}, {x: 350, y: 70}, // Right side (0~4)
-      {x: 350, y: 50},  {x: 280, y: 50},  {x: 210, y: 50},  {x: 140, y: 50},  {x: 70, y: 50},  // Top side (5~9)
-      {x: 50,  y: 50},  {x: 50,  y: 140}, {x: 50,  y: 210}, {x: 50,  y: 280}, {x: 50, y: 350}, // Left side (10~14)
-      {x: 50,  y: 350}, {x: 140, y: 350}, {x: 210, y: 350}, {x: 280, y: 350},                // Bottom side (15~18)
-      {x: 300, y: 100}, {x: 250, y: 150}, {x: 200, y: 200}, {x: 150, y: 250}, {x: 100, y: 300}, // Diagonal 1
-      {x: 100, y: 100}, {x: 150, y: 150}, {x: 250, y: 250}, {x: 300, y: 300},                // Diagonal 2
-      {x: 380, y: 380} // 완주 (30)
+      {x: 0, y: 0}, // 0번 위치 (플레이어별 대기소 좌표는 따로 처리)
+      {x: 350, y: 350}, {x: 350, y: 280}, {x: 350, y: 210}, {x: 350, y: 140}, {x: 350, y: 70}, 
+      {x: 350, y: 30},  {x: 280, y: 30},  {x: 210, y: 30},  {x: 140, y: 30},  {x: 70, y: 30},  
+      {x: 30,  y: 30},  {x: 30,  y: 140}, {x: 30,  y: 210}, {x: 30,  y: 280}, {x: 30, y: 350}, 
+      {x: 30,  y: 350}, {x: 140, y: 350}, {x: 210, y: 350}, {x: 280, y: 350},                
+      {x: 300, y: 80},  {x: 250, y: 130}, {x: 190, y: 190}, {x: 130, y: 250}, {x: 80, y: 300}, 
+      {x: 80,  y: 80},  {x: 130, y: 130}, {x: 250, y: 250}, {x: 300, y: 300},                
+      {x: 380, y: 380}
     ];
 
     const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f'];
@@ -120,28 +106,57 @@
       drawBoard();
     });
 
-    socket.on('yutResult', ({ player, result, isBonusTurn }) => {
-      document.getElementById('result-box').innerText = `${player.nickname}: [ ${result} ]!`;
+    socket.on('yutResult', ({ player, result }) => {
+      document.getElementById('result-box').innerText = `${player.nickname}: [ ${result} ]! 말을 클릭하세요.`;
       currentLastResultSteps = yutStepMap[result];
 
       if (player.id === myId) {
-        document.getElementById('token-select-area').style.display = 'block';
+        canMoveToken = true;
         document.getElementById('throw-btn').disabled = true;
       }
     });
 
     socket.on('tokenMoved', ({ tokens, nextTurn }) => {
       tokensData = tokens;
-      document.getElementById('token-select-area').style.display = 'none';
+      canMoveToken = false;
       updateUI(playersData, nextTurn);
       drawBoard();
     });
 
-    function selectTokenToMove(tokenIdx) {
-      socket.emit('moveToken', { tokenIndex: tokenIdx, steps: currentLastResultSteps });
-    }
+    // 판 클릭 시 말 감지 및 이동
+    canvas.addEventListener('click', (e) => {
+      if (!canMoveToken) return;
 
-    // 윷놀이 판 Canvas 그리기
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const myTokens = tokensData[myId] || [0, 0, 0, 0];
+      const pIdx = playersData.findIndex(p => p.id === myId);
+
+      for (let tIdx = 0; tIdx < myTokens.length; tIdx++) {
+        const pos = myTokens[tIdx];
+        let tokenPos = { x: 0, y: 0 };
+
+        if (pos === 0) {
+          // 대기 구역 위치
+          tokenPos = { x: 50 + tIdx * 30, y: 410 };
+        } else if (pos < 30) {
+          tokenPos = boardCoords[pos];
+        } else {
+          continue; // 완주한 말
+        }
+
+        // 마우스 클릭 위치와 말의 거리 계산 (반경 18px 이내 클릭 감지)
+        const dist = Math.hypot(mouseX - tokenPos.x, mouseY - tokenPos.y);
+        if (dist <= 18) {
+          socket.emit('moveToken', { tokenIndex: tIdx, steps: currentLastResultSteps });
+          canMoveToken = false;
+          break;
+        }
+      }
+    });
+
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -149,20 +164,27 @@
       ctx.strokeStyle = '#b5835a';
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.strokeRect(50, 50, 300, 300);
-      ctx.moveTo(50, 50); ctx.lineTo(350, 350);
-      ctx.moveTo(350, 50); ctx.lineTo(50, 350);
+      ctx.strokeRect(30, 30, 320, 320);
+      ctx.moveTo(30, 30); ctx.lineTo(350, 350);
+      ctx.moveTo(350, 30); ctx.lineTo(30, 350);
       ctx.stroke();
 
-      // 판 위 모든 점 그리기
-      boardCoords.forEach((pt, i) => {
-        if (i === 30) return; // 완주 구역 제외
+      // 판 위 점 그리기
+      for (let i = 1; i < 30; i++) {
+        const pt = boardCoords[i];
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, (i % 5 === 0 || i === 22) ? 14 : 8, 0, Math.PI * 2);
         ctx.fillStyle = (i % 5 === 0 || i === 22) ? '#e67e22' : '#d2b48c';
         ctx.fill();
         ctx.stroke();
-      });
+      }
+
+      // 대기 구역 UI 그리기
+      ctx.fillStyle = '#eee';
+      ctx.fillRect(10, 385, 380, 45);
+      ctx.fillStyle = '#666';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('대기 말 (클릭 시 출발)', 20, 400);
 
       // 플레이어 말 그리기
       playersData.forEach((player, pIdx) => {
@@ -170,15 +192,34 @@
         const color = playerColors[pIdx % 4];
 
         pTokens.forEach((pos, tIdx) => {
-          if (pos > 0 && pos <= 29) {
+          let x = 0, y = 0;
+
+          if (pos === 0) {
+            // 대기실에 배치
+            x = 50 + tIdx * 30;
+            y = 415;
+          } else if (pos < 30) {
             const coord = boardCoords[pos];
+            x = coord.x + (tIdx * 4 - 6);
+            y = coord.y + (pIdx * 4 - 6);
+          } else {
+            return; // 완주
+          }
+
+          ctx.beginPath();
+          ctx.arc(x, y, 10, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#fff';
+          ctx.stroke();
+
+          // 내 말이 이동 가능한 상태면 하이라이트 표시
+          if (player.id === myId && canMoveToken) {
             ctx.beginPath();
-            // 여러 말이 겹칠 경우 오프셋 살짝 부여
-            ctx.arc(coord.x + (tIdx * 4 - 6), coord.y + (pIdx * 4 - 6), 10, 0, Math.PI * 2);
-            ctx.fillStyle = color;
-            ctx.fill();
+            ctx.arc(x, y, 13, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ff0000';
             ctx.lineWidth = 2;
-            ctx.strokeStyle = '#fff';
             ctx.stroke();
           }
         });
@@ -190,7 +231,7 @@
       const listDiv = document.getElementById('players');
       listDiv.innerHTML = '';
 
-      players.forEach((p, idx) => {
+      players.forEach((p) => {
         const isMe = p.id === myId ? ' (나)' : '';
         const item = document.createElement('div');
         if (currentTurn && p.id === currentTurn.id) item.className = 'active-turn';
@@ -201,7 +242,7 @@
       if (currentTurn) {
         const throwBtn = document.getElementById('throw-btn');
         const isMyTurn = currentTurn.id === myId;
-        throwBtn.disabled = !isMyTurn;
+        throwBtn.disabled = !isMyTurn || canMoveToken;
         throwBtn.innerText = isMyTurn ? '내 턴! 윷 던지기' : `${currentTurn.nickname} 턴 대기 중...`;
       }
     }
