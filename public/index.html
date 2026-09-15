@@ -3,39 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 윷놀이 (2~4인용)</title>
+  <title>실시간 윷놀이 판 & 말 포함</title>
   <style>
     body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
-    .card { background: white; max-width: 480px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .card { background: white; max-width: 520px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
     button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
     button:disabled { background-color: #ccc; cursor: not-allowed; }
-    #result-box { font-size: 28px; font-weight: bold; margin: 20px 0; color: #333; min-height: 40px; }
-    .player-list { text-align: left; background: #fafafa; padding: 10px 15px; border-radius: 8px; border: 1px solid #eee; }
-    .player-item { padding: 5px 0; font-size: 15px; }
+    #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 15px 0; }
+    #result-box { font-size: 24px; font-weight: bold; margin: 10px 0; color: #333; min-height: 35px; }
+    .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
     .active-turn { font-weight: bold; color: #007bff; }
+    .token-btns { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
+    .token-btn { background: #007bff; padding: 8px 12px; font-size: 14px; }
     #game-area { display: none; }
   </style>
 </head>
 <body>
 
-  <!-- 입장 영역 -->
+  <!-- 로그인 화면 -->
   <div class="card" id="login-area">
     <h2>🎲 실시간 윷놀이</h2>
-    <p>2인~4인이 함께 플레이할 수 있습니다.</p>
     <input type="text" id="nickname" placeholder="닉네임 입력" maxlength="8"><br>
-    <input type="text" id="room-id" placeholder="방 코드 (예: room123)"><br>
+    <input type="text" id="room-id" placeholder="방 코드 입력"><br>
     <button onclick="joinRoom()">입장하기</button>
   </div>
 
-  <!-- 게임 영역 -->
+  <!-- 게임 화면 -->
   <div class="card" id="game-area">
     <h3 id="room-title">방 코드: </h3>
     
     <div class="player-list">
-      <h4>참여한 플레이어 (<span id="player-count">0</span>/4)</h4>
+      <div>참여 인원 (<span id="player-count">0</span>/4)</div>
       <div id="players"></div>
     </div>
+
+    <!-- 윷놀이 판 Canvas -->
+    <canvas id="board-canvas" width="400" height="400"></canvas>
 
     <div id="result-box">대기 중...</div>
 
@@ -43,105 +47,162 @@
       <button id="start-btn" onclick="startGame()">게임 시작 (2인 이상)</button>
       <button id="throw-btn" onclick="throwYut()" style="display:none;">윷 던지기!</button>
     </div>
+
+    <!-- 말 선택 이동 버튼 -->
+    <div id="token-select-area" style="display:none;">
+      <p style="margin:5px 0; font-size:14px; color:#666;">이동할 말을 선택하세요:</p>
+      <div class="token-btns">
+        <button class="token-btn" onclick="selectTokenToMove(0)">말 1</button>
+        <button class="token-btn" onclick="selectTokenToMove(1)">말 2</button>
+        <button class="token-btn" onclick="selectTokenToMove(2)">말 3</button>
+        <button class="token-btn" onclick="selectTokenToMove(3)">말 4</button>
+      </div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
     let myId = null;
+    let currentLastResultSteps = 0;
+    let playersData = [];
+    let tokensData = {};
 
-    socket.on('connect', () => {
-      myId = socket.id;
-    });
+    const canvas = document.getElementById('board-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // 윷놀이 판 좌표 정의 (30개 주요 위치)
+    const boardCoords = [
+      {x: 350, y: 350}, {x: 350, y: 280}, {x: 350, y: 210}, {x: 350, y: 140}, {x: 350, y: 70}, // Right side (0~4)
+      {x: 350, y: 50},  {x: 280, y: 50},  {x: 210, y: 50},  {x: 140, y: 50},  {x: 70, y: 50},  // Top side (5~9)
+      {x: 50,  y: 50},  {x: 50,  y: 140}, {x: 50,  y: 210}, {x: 50,  y: 280}, {x: 50, y: 350}, // Left side (10~14)
+      {x: 50,  y: 350}, {x: 140, y: 350}, {x: 210, y: 350}, {x: 280, y: 350},                // Bottom side (15~18)
+      {x: 300, y: 100}, {x: 250, y: 150}, {x: 200, y: 200}, {x: 150, y: 250}, {x: 100, y: 300}, // Diagonal 1
+      {x: 100, y: 100}, {x: 150, y: 150}, {x: 250, y: 250}, {x: 300, y: 300},                // Diagonal 2
+      {x: 380, y: 380} // 완주 (30)
+    ];
+
+    const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f'];
+
+    socket.on('connect', () => { myId = socket.id; });
 
     function joinRoom() {
       const nickname = document.getElementById('nickname').value.trim();
       const roomId = document.getElementById('room-id').value.trim();
-
-      if (!roomId) {
-        alert('방 코드를 입력하세요.');
-        return;
-      }
+      if (!roomId) return alert('방 코드를 입력하세요.');
 
       socket.emit('joinRoom', { roomId, nickname });
-
       document.getElementById('login-area').style.display = 'none';
       document.getElementById('game-area').style.display = 'block';
       document.getElementById('room-title').innerText = `방 코드: ${roomId}`;
+      drawBoard();
     }
 
-    function startGame() {
-      socket.emit('startGame');
-    }
+    function startGame() { socket.emit('startGame'); }
+    function throwYut() { socket.emit('throwYut'); }
 
-    function throwYut() {
-      socket.emit('throwYut');
-    }
+    const yutStepMap = { '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 5 };
 
-    // 서버 대기실 업데이트 받기
-    socket.on('roomState', ({ players, currentTurn, gameStarted }) => {
-      updatePlayersUI(players, currentTurn);
-
-      if (!gameStarted) {
-        const isHost = players.length > 0 && players[0].id === myId;
-        document.getElementById('start-btn').style.display = isHost ? 'inline-block' : 'none';
-        document.getElementById('start-btn').disabled = players.length < 2;
-      }
+    socket.on('roomState', ({ players, currentTurn, gameStarted, tokens }) => {
+      playersData = players;
+      tokensData = tokens;
+      updateUI(players, currentTurn);
+      drawBoard();
     });
 
-    // 게임 시작 시
-    socket.on('gameStarted', ({ players, currentTurn }) => {
+    socket.on('gameStarted', ({ players, currentTurn, tokens }) => {
+      playersData = players;
+      tokensData = tokens;
       document.getElementById('start-btn').style.display = 'none';
       document.getElementById('throw-btn').style.display = 'inline-block';
       document.getElementById('result-box').innerText = '게임을 시작합니다!';
-      updatePlayersUI(players, currentTurn);
+      updateUI(players, currentTurn);
+      drawBoard();
     });
 
-    // 윷 던진 결과
-    socket.on('yutResult', ({ player, result, nextTurn, isBonusTurn }) => {
-      let msg = `${player.nickname} 님의 결과: [ ${result} ]!`;
-      if (isBonusTurn) {
-        msg += ' 🎉 한 번 더 던지세요!';
+    socket.on('yutResult', ({ player, result, isBonusTurn }) => {
+      document.getElementById('result-box').innerText = `${player.nickname}: [ ${result} ]!`;
+      currentLastResultSteps = yutStepMap[result];
+
+      if (player.id === myId) {
+        document.getElementById('token-select-area').style.display = 'block';
+        document.getElementById('throw-btn').disabled = true;
       }
-      document.getElementById('result-box').innerText = msg;
-      
-      updateTurnUI(nextTurn);
     });
 
-    socket.on('errorMsg', (msg) => {
-      alert(msg);
+    socket.on('tokenMoved', ({ tokens, nextTurn }) => {
+      tokensData = tokens;
+      document.getElementById('token-select-area').style.display = 'none';
+      updateUI(playersData, nextTurn);
+      drawBoard();
     });
 
-    function updatePlayersUI(players, currentTurn) {
+    function selectTokenToMove(tokenIdx) {
+      socket.emit('moveToken', { tokenIndex: tokenIdx, steps: currentLastResultSteps });
+    }
+
+    // 윷놀이 판 Canvas 그리기
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 외곽선 및 대각선
+      ctx.strokeStyle = '#b5835a';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.strokeRect(50, 50, 300, 300);
+      ctx.moveTo(50, 50); ctx.lineTo(350, 350);
+      ctx.moveTo(350, 50); ctx.lineTo(50, 350);
+      ctx.stroke();
+
+      // 판 위 모든 점 그리기
+      boardCoords.forEach((pt, i) => {
+        if (i === 30) return; // 완주 구역 제외
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, (i % 5 === 0 || i === 22) ? 14 : 8, 0, Math.PI * 2);
+        ctx.fillStyle = (i % 5 === 0 || i === 22) ? '#e67e22' : '#d2b48c';
+        ctx.fill();
+        ctx.stroke();
+      });
+
+      // 플레이어 말 그리기
+      playersData.forEach((player, pIdx) => {
+        const pTokens = tokensData[player.id] || [0, 0, 0, 0];
+        const color = playerColors[pIdx % 4];
+
+        pTokens.forEach((pos, tIdx) => {
+          if (pos > 0 && pos <= 29) {
+            const coord = boardCoords[pos];
+            ctx.beginPath();
+            // 여러 말이 겹칠 경우 오프셋 살짝 부여
+            ctx.arc(coord.x + (tIdx * 4 - 6), coord.y + (pIdx * 4 - 6), 10, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#fff';
+            ctx.stroke();
+          }
+        });
+      });
+    }
+
+    function updateUI(players, currentTurn) {
       document.getElementById('player-count').innerText = players.length;
       const listDiv = document.getElementById('players');
       listDiv.innerHTML = '';
 
-      players.forEach((p, index) => {
+      players.forEach((p, idx) => {
         const isMe = p.id === myId ? ' (나)' : '';
-        const isHost = index === 0 ? ' 👑[방장]' : '';
         const item = document.createElement('div');
-        item.className = 'player-item';
-        if (currentTurn && p.id === currentTurn.id) {
-          item.classList.add('active-turn');
-        }
-        item.innerText = `${p.number}번. ${p.nickname}${isMe}${isHost}`;
+        if (currentTurn && p.id === currentTurn.id) item.className = 'active-turn';
+        item.innerText = `${p.number}번. ${p.nickname}${isMe}`;
         listDiv.appendChild(item);
       });
 
-      updateTurnUI(currentTurn);
-    }
-
-    function updateTurnUI(currentTurn) {
-      if (!currentTurn) return;
-      const throwBtn = document.getElementById('throw-btn');
-      const isMyTurn = currentTurn.id === myId;
-
-      throwBtn.disabled = !isMyTurn;
-      if (isMyTurn) {
-        throwBtn.innerText = '내 턴! 윷 던지기';
-      } else {
-        throwBtn.innerText = `${currentTurn.nickname} 턴 대기 중...`;
+      if (currentTurn) {
+        const throwBtn = document.getElementById('throw-btn');
+        const isMyTurn = currentTurn.id === myId;
+        throwBtn.disabled = !isMyTurn;
+        throwBtn.innerText = isMyTurn ? '내 턴! 윷 던지기' : `${currentTurn.nickname} 턴 대기 중...`;
       }
     }
   </script>
