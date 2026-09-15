@@ -11,9 +11,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 방 상태 저장 객체
 const rooms = {};
-
 const YUT_TYPES = ['도', '개', '걸', '윷', '모'];
 const YUT_WEIGHTS = [1, 3, 3, 1, 1];
 
@@ -28,7 +26,6 @@ function getRandomYut() {
 io.on('connection', (socket) => {
   let currentRoom = null;
 
-  // 방 참가/생성
   socket.on('joinRoom', ({ roomId, nickname }) => {
     if (!roomId) return;
 
@@ -37,6 +34,8 @@ io.on('connection', (socket) => {
         players: [],
         turnIndex: 0,
         gameStarted: false,
+        // 각 플레이어별 4개의 말 위치 (0: 대기중, 1~29: 판 위 위치, 30: 완주)
+        tokens: {} 
       };
     }
 
@@ -60,17 +59,20 @@ io.on('connection', (socket) => {
     };
 
     room.players.push(player);
+    // 각 플레이어당 말 4개 초기화 (위치 0)
+    room.tokens[socket.id] = [0, 0, 0, 0];
+
     socket.join(roomId);
     currentRoom = roomId;
 
     io.to(roomId).emit('roomState', {
       players: room.players,
       currentTurn: room.players[room.turnIndex],
-      gameStarted: room.gameStarted
+      gameStarted: room.gameStarted,
+      tokens: room.tokens
     });
   });
 
-  // 게임 시작 (2인 이상시 방장이 시작)
   socket.on('startGame', () => {
     if (!currentRoom || !rooms[currentRoom]) return;
     const room = rooms[currentRoom];
@@ -90,11 +92,11 @@ io.on('connection', (socket) => {
 
     io.to(currentRoom).emit('gameStarted', {
       players: room.players,
-      currentTurn: room.players[room.turnIndex]
+      currentTurn: room.players[room.turnIndex],
+      tokens: room.tokens
     });
   });
 
-  // 윷 던지기
   socket.on('throwYut', () => {
     if (!currentRoom || !rooms[currentRoom]) return;
     const room = rooms[currentRoom];
@@ -108,37 +110,56 @@ io.on('connection', (socket) => {
     }
 
     const result = getRandomYut();
-
-    // '윷'이나 '모'가 나오면 한 번 더 턴 유지, 그 외에는 다음 사람 턴
     const isBonusTurn = result === '윷' || result === '모';
-    if (!isBonusTurn) {
-      room.turnIndex = (room.turnIndex + 1) % room.players.length;
-    }
 
     io.to(currentRoom).emit('yutResult', {
       player: currentPlayer,
       result: result,
-      nextTurn: room.players[room.turnIndex],
       isBonusTurn: isBonusTurn
     });
   });
 
-  // 연결 해제
+  // 말 이동 이벤트
+  socket.on('moveToken', ({ tokenIndex, steps }) => {
+    if (!currentRoom || !rooms[currentRoom]) return;
+    const room = rooms[currentRoom];
+
+    if (room.players[room.turnIndex].id !== socket.id) return;
+
+    const playerTokens = room.tokens[socket.id];
+    let currentPos = playerTokens[tokenIndex];
+
+    // 말 위치 계산 (최대 29번 칸까지, 그 이상은 완주 30)
+    if (currentPos < 30) {
+      currentPos += steps;
+      if (currentPos >= 30) currentPos = 30; // 완주
+      playerTokens[tokenIndex] = currentPos;
+    }
+
+    // 다음 턴으로 교체
+    room.turnIndex = (room.turnIndex + 1) % room.players.length;
+
+    io.to(currentRoom).emit('tokenMoved', {
+      tokens: room.tokens,
+      nextTurn: room.players[room.turnIndex]
+    });
+  });
+
   socket.on('disconnect', () => {
     if (currentRoom && rooms[currentRoom]) {
       const room = rooms[currentRoom];
       room.players = room.players.filter(p => p.id !== socket.id);
+      delete room.tokens[socket.id];
 
       if (room.players.length === 0) {
         delete rooms[currentRoom];
       } else {
-        if (room.turnIndex >= room.players.length) {
-          room.turnIndex = 0;
-        }
+        if (room.turnIndex >= room.players.length) room.turnIndex = 0;
         io.to(currentRoom).emit('roomState', {
           players: room.players,
           currentTurn: room.players[room.turnIndex],
-          gameStarted: room.gameStarted
+          gameStarted: room.gameStarted,
+          tokens: room.tokens
         });
       }
     }
