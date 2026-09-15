@@ -26,42 +26,40 @@ function rollYut() {
 
 // --- 윷놀이 정밀 경로 이동 계산 함수 ---
 function getNextPosition(currentPos, steps) {
+  // 1. 대기 구역(0)에서 처음 출발할 때 (도:1, 개:2, 걸:3, 윷:4, 모:5)
   if (currentPos === 0) {
-    return steps; // 출발
+    return steps;
   }
 
   let pos = currentPos;
 
-  // 1. 모서리 출발 분기점 처리 (윷판 코스 지름길)
+  // 2. 모서리 출발 분기점 처리 (윷판 지름길 진입)
   if (pos === 5) {
-    // 오른쪽 위 모서리 (대각선 1 시작)
-    pos = 20 + steps; // 21번 칸부터 대각선 진입
-    if (pos > 25) pos = 15 + (pos - 25); // 대각선 빠져나와 왼쪽 아래로
+    // 우상단 모서리(5) 출발 -> 대각선 1 진입 (21번부터 시작)
+    pos = 20 + steps; 
+    if (pos > 25) pos = 15 + (pos - 25);
     return pos;
   }
   
   if (pos === 10) {
-    // 왼쪽 위 모서리 (대각선 2 시작)
-    pos = 25 + steps; // 26번 칸부터 대각선 진입
-    if (pos > 29) pos = 20; // 중앙 지나 우하단으로
+    // 좌상단 모서리(10) 출발 -> 대각선 2 진입 (26번부터 시작)
+    pos = 25 + steps;
+    if (pos > 29) pos = 20;
     return pos;
   }
 
   if (pos === 23) {
-    // 방아깨비(중앙) 출발 시 지름길 처리
+    // 중앙 방아깨비(23) 출발 시 지름길 처리
     return 28 + steps;
   }
 
-  // 2. 일반 직진 이동 처리
+  // 3. 일반 직진 및 외곽 코스 순환
   for (let i = 0; i < steps; i++) {
-    if (pos === 20) { pos = 15; continue; } // 외곽 한 바퀴 코스 연결
-    if (pos === 25) { pos = 15; continue; } // 대각선1 종료 후 15번 연결
-    if (pos === 29) { pos = 20; continue; } // 대각선2 종료 후 20번(출구) 연결
+    if (pos === 20) { pos = 15; continue; } // 외곽 한 바퀴 도는 연결
+    if (pos === 25) { pos = 15; continue; } // 대각선 1 종료 후 15번 연결
+    if (pos === 29) { pos = 20; continue; } // 대각선 2 종료 후 20번(출구) 연결
     
     pos++;
-    
-    // 외곽 완주(20번 넘어가면 종료)
-    if (pos > 20 && pos < 21) pos = 30; 
   }
 
   if (pos > 29) return 30; // 30: 완주
@@ -128,7 +126,7 @@ io.on('connection', (socket) => {
 
     const result = rollYut();
     
-    // 윷이나 모가 나오면 찬스 부여
+    // 윷이나 모가 나오면 보너스 찬스
     if (result === '윷' || result === '모') {
       room.extraThrow = true;
     }
@@ -151,7 +149,7 @@ io.on('connection', (socket) => {
     const myTokens = room.tokens[socket.id];
     let currentPos = myTokens[tokenIndex];
 
-    // 지름길 반영된 정확한 위치 계산
+    // 정확한 이동 위치 계산 (첫 출발 보정 포함)
     let newPos = getNextPosition(currentPos, steps);
 
     myTokens[tokenIndex] = newPos;
@@ -164,7 +162,7 @@ io.on('connection', (socket) => {
         if (otherPlayerId !== socket.id) {
           room.tokens[otherPlayerId].forEach((otherPos, oIdx) => {
             if (otherPos === newPos) {
-              room.tokens[otherPlayerId][oIdx] = 0; // 잡힌 말은 대기소(0)로 격하
+              room.tokens[otherPlayerId][oIdx] = 0; // 잡힌 말은 대기소(0)로 복귀
               caughtOpponent = true;
             }
           });
@@ -172,13 +170,13 @@ io.on('connection', (socket) => {
       });
     }
 
-    // 모/윷을 쳤거나 상대 말을 잡았으면 한 번 더 던짐
+    // 모/윷을 던졌거나 상대 말을 잡았으면 한 번 더 던짐
     const grantExtraTurn = isYutOrMo || caughtOpponent || room.extraThrow;
 
     if (grantExtraTurn) {
-      room.extraThrow = false; // 보너스 기회 소비
+      room.extraThrow = false;
     } else {
-      // 다음 사람 턴 넘김
+      // 다음 사람에게 턴 넘김
       room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
     }
 
