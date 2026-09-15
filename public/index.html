@@ -34,7 +34,8 @@
       <div id="players"></div>
     </div>
 
-    <canvas id="board-canvas" width="360" height="440"></canvas>
+    <!-- 판 크기를 정비율로 맞추기 위해 width=360, height=430 정렬 -->
+    <canvas id="board-canvas" width="360" height="430"></canvas>
 
     <div id="result-box">대기 중...</div>
 
@@ -56,27 +57,82 @@
     const canvas = document.getElementById('board-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 정통 윷놀이 판 좌표 정의 (한 변에 모서리 포함 6개 점)
+    // --- 수학적으로 정확한 윷놀이 좌표 정밀 계산 ---
+    const S = 30;   // 시작 여백 (Offset)
+    const L = 300;  // 외곽 한 변 길이 (30 ~ 330)
+    const M = S + L / 2; // 중앙점 (180, 180)
+
+    // 외곽 변을 5등분한 간격 (점 6개)
+    const step = L / 5; // 60px 간격
+
+    // 대각선 3등분 위치 계산 함수
+    function getDiagPoint(x1, y1, x2, y2, ratio) {
+      return { x: x1 + (x2 - x1) * ratio, y: y1 + (y2 - y1) * ratio };
+    }
+
+    // 주요 모서리 좌표 정의
+    const CORNER_BR = { x: S + L, y: S + L }; // 1: 출발 (우하)
+    const CORNER_TR = { x: S + L, y: S };     // 6: 윷 (우상)
+    const CORNER_TL = { x: S,     y: S };     // 11: 모 (좌상)
+    const CORNER_BL = { x: S,     y: S + L }; // 16: 뒷도 (좌하)
+    const CENTER    = { x: M,     y: M };     // 23: 방아깨비 (중앙)
+
+    // 대각선 상의 점 정밀 계산 (각 대각선당 중앙 제외 중간점 2개씩)
+    const D_TR_C1 = getDiagPoint(CORNER_TR.x, CORNER_TR.y, CENTER.x, CENTER.y, 1/3);
+    const D_TR_C2 = getDiagPoint(CORNER_TR.x, CORNER_TR.y, CENTER.x, CENTER.y, 2/3);
+    
+    const D_C_BL1 = getDiagPoint(CENTER.x, CENTER.y, CORNER_BL.x, CORNER_BL.y, 1/3);
+    const D_C_BL2 = getDiagPoint(CENTER.x, CENTER.y, CORNER_BL.x, CORNER_BL.y, 2/3);
+
+    const D_TL_C1 = getDiagPoint(CORNER_TL.x, CORNER_TL.y, CENTER.x, CENTER.y, 1/3);
+    const D_TL_C2 = getDiagPoint(CORNER_TL.x, CORNER_TL.y, CENTER.x, CENTER.y, 2/3);
+
+    const D_C_BR1 = getDiagPoint(CENTER.x, CENTER.y, CORNER_BR.x, CORNER_BR.y, 1/3);
+    const D_C_BR2 = getDiagPoint(CENTER.x, CENTER.y, CORNER_BR.x, CORNER_BR.y, 2/3);
+
+    // 정통 윷놀이판 29개 전체 좌표 배열
     const boardCoords = [
-      {x: 0, y: 0}, // 0: 대기소
-      
-      // 오른쪽 아래(출발) -> 오른쪽 위 (1~5)
-      {x: 340, y: 340}, {x: 340, y: 276}, {x: 340, y: 212}, {x: 340, y: 148}, {x: 340, y: 84}, {x: 340, y: 20},
-      
-      // 오른쪽 위 -> 왼쪽 위 (6~10)
-      {x: 276, y: 20},  {x: 212, y: 20},  {x: 148, y: 20},  {x: 84, y: 20},   {x: 20, y: 20},
-      
-      // 왼쪽 위 -> 왼쪽 아래 (11~15)
-      {x: 20, y: 84},   {x: 20, y: 148},  {x: 20, y: 212},  {x: 20, y: 276},  {x: 20, y: 340},
-      
-      // 왼쪽 아래 -> 오른쪽 아래 (16~19)
-      {x: 84, y: 340},  {x: 148, y: 340}, {x: 212, y: 340}, {x: 276, y: 340},
-      
-      // 대각선 1 (오른쪽 위 -> 왼쪽 아래) (20~24)
-      {x: 287, y: 73},  {x: 234, y: 126}, {x: 180, y: 180}, {x: 126, y: 234}, {x: 73, y: 287},
-      
-      // 대각선 2 (왼쪽 위 -> 오른쪽 아래) (25~28)
-      {x: 73, y: 73},   {x: 126, y: 126}, {x: 234, y: 234}, {x: 287, y: 287}
+      { x: 0, y: 0 }, // 0: 대기 구역
+
+      // 1 ~ 5: 오른쪽 변 (아래 -> 위)
+      { x: S + L, y: S + L },
+      { x: S + L, y: S + L - step },
+      { x: S + L, y: S + L - step * 2 },
+      { x: S + L, y: S + L - step * 3 },
+      { x: S + L, y: S + L - step * 4 },
+
+      // 6 ~ 10: 위쪽 변 (오른쪽 -> 왼쪽)
+      { x: S + L,          y: S },
+      { x: S + L - step,   y: S },
+      { x: S + L - step*2, y: S },
+      { x: S + L - step*3, y: S },
+      { x: S + L - step*4, y: S },
+
+      // 11 ~ 15: 왼쪽 변 (위 -> 아래)
+      { x: S, y: S },
+      { x: S, y: S + step },
+      { x: S, y: S + step * 2 },
+      { x: S, y: S + step * 3 },
+      { x: S, y: S + step * 4 },
+
+      // 16 ~ 20: 아래쪽 변 (왼쪽 -> 오른쪽)
+      { x: S,          y: S + L },
+      { x: S + step,   y: S + L },
+      { x: S + step*2, y: S + L },
+      { x: S + step*3, y: S + L },
+
+      // 21 ~ 25: 대각선 1 (우상 -> 좌하 코스)
+      D_TR_C1, // 21
+      D_TR_C2, // 22
+      CENTER,  // 23 (중앙 방아깨비)
+      D_C_BL1, // 24
+      D_C_BL2, // 25
+
+      // 26 ~ 29: 대각선 2 (좌상 -> 우하 코스)
+      D_TL_C1, // 26
+      D_TL_C2, // 27
+      D_C_BR1, // 28
+      D_C_BR2  // 29
     ];
 
     const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f'];
@@ -134,7 +190,7 @@
       drawBoard();
     });
 
-    // 판 클릭 시 말 클릭 감지
+    // 판 클릭 시 말 감지 및 이동
     canvas.addEventListener('click', (e) => {
       if (!canMoveToken) return;
 
@@ -149,8 +205,8 @@
         let tokenPos = { x: 0, y: 0 };
 
         if (pos === 0) {
-          tokenPos = { x: 50 + tIdx * 35, y: 412 };
-        } else if (pos <= 28) {
+          tokenPos = { x: 50 + tIdx * 35, y: 395 };
+        } else if (pos <= 29) {
           tokenPos = boardCoords[pos];
         } else {
           continue;
@@ -168,26 +224,29 @@
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const startX = 20, startY = 20, size = 320;
-
-      // 외곽 사각형 및 대각선
+      // 1. 외곽 사각형 및 정확한 대각선 선 그리기
       ctx.strokeStyle = '#8b5a2b';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.strokeRect(startX, startY, size, size);
-      ctx.moveTo(startX, startY); ctx.lineTo(startX + size, startY + size);
-      ctx.moveTo(startX + size, startY); ctx.lineTo(startX, startY + size);
+      
+      // 외곽선 (30, 30, 300, 300)
+      ctx.strokeRect(S, S, L, L);
+      
+      // 정확히 4개 모서리를 연결하는 대각선
+      ctx.moveTo(S, S); ctx.lineTo(S + L, S + L);
+      ctx.moveTo(S + L, S); ctx.lineTo(S, S + L);
       ctx.stroke();
 
-      // 주요 거점 점 강조 (4개 모서리 및 중앙)
-      const bigPoints = [5, 10, 15, 1, 22];
+      // 2. 윷놀이 판 위의 모든 29개 점 그리기
+      // 대형 거점 (4개 모서리: 1, 6, 11, 16 / 중앙: 23)
+      const bigPoints = [1, 6, 11, 16, 23];
 
-      for (let i = 1; i <= 28; i++) {
+      for (let i = 1; i <= 29; i++) {
         const pt = boardCoords[i];
         const isBig = bigPoints.includes(i);
 
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, isBig ? 13 : 8, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, isBig ? 13 : 7, 0, Math.PI * 2);
         ctx.fillStyle = isBig ? '#e67e22' : '#f39c12';
         ctx.fill();
         ctx.strokeStyle = '#5d4037';
@@ -195,14 +254,14 @@
         ctx.stroke();
       }
 
-      // 대기 구역
+      // 3. 하단 대기 말 구역
       ctx.fillStyle = '#eaeaea';
-      ctx.fillRect(10, 380, 340, 50);
+      ctx.fillRect(10, 360, 340, 55);
       ctx.fillStyle = '#555';
       ctx.font = '12px sans-serif';
-      ctx.fillText('대기 중인 말 (클릭하여 출발)', 20, 395);
+      ctx.fillText('대기 중인 말 (클릭하여 출발)', 20, 375);
 
-      // 플레이어 말 그리기
+      // 4. 플레이어 말 그리기
       playersData.forEach((player, pIdx) => {
         const pTokens = tokensData[player.id] || [0, 0, 0, 0];
         const color = playerColors[pIdx % 4];
@@ -212,13 +271,13 @@
 
           if (pos === 0) {
             x = 50 + tIdx * 35;
-            y = 412;
-          } else if (pos <= 28) {
+            y = 395;
+          } else if (pos <= 29) {
             const coord = boardCoords[pos];
             x = coord.x + (tIdx * 3 - 4.5);
             y = coord.y + (pIdx * 3 - 4.5);
           } else {
-            return;
+            return; // 완주
           }
 
           ctx.beginPath();
@@ -229,6 +288,7 @@
           ctx.strokeStyle = '#fff';
           ctx.stroke();
 
+          // 이동할 순서의 말인 경우 빨간색 하이라이트 원 표시
           if (player.id === myId && canMoveToken) {
             ctx.beginPath();
             ctx.arc(x, y, 12, 0, Math.PI * 2);
