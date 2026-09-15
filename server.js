@@ -34,7 +34,6 @@ io.on('connection', (socket) => {
         players: [],
         turnIndex: 0,
         gameStarted: false,
-        // 각 플레이어별 4개의 말 위치 (0: 대기중, 1~29: 판 위 위치, 30: 완주)
         tokens: {} 
       };
     }
@@ -59,7 +58,7 @@ io.on('connection', (socket) => {
     };
 
     room.players.push(player);
-    // 각 플레이어당 말 4개 초기화 (위치 0)
+    // 각 플레이어별 말 4개 (0: 대기 구역)
     room.tokens[socket.id] = [0, 0, 0, 0];
 
     socket.join(roomId);
@@ -119,7 +118,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 말 이동 이벤트
   socket.on('moveToken', ({ tokenIndex, steps }) => {
     if (!currentRoom || !rooms[currentRoom]) return;
     const room = rooms[currentRoom];
@@ -129,14 +127,13 @@ io.on('connection', (socket) => {
     const playerTokens = room.tokens[socket.id];
     let currentPos = playerTokens[tokenIndex];
 
-    // 말 위치 계산 (최대 29번 칸까지, 그 이상은 완주 30)
     if (currentPos < 30) {
       currentPos += steps;
       if (currentPos >= 30) currentPos = 30; // 완주
       playerTokens[tokenIndex] = currentPos;
     }
 
-    // 다음 턴으로 교체
+    // 다음 턴 교체
     room.turnIndex = (room.turnIndex + 1) % room.players.length;
 
     io.to(currentRoom).emit('tokenMoved', {
