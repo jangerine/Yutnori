@@ -10,7 +10,6 @@ app.use(express.static('public'));
 
 const rooms = {};
 
-// 윷 던지기 확률 계산 함수
 function rollYut() {
   const results = ['도', '개', '걸', '윷', '모'];
   const weights = [4, 6, 4, 1, 1];
@@ -24,57 +23,39 @@ function rollYut() {
   return '도';
 }
 
-// --- 윷놀이 정밀 경로 이동 계산 함수 (한 칸 당겨진 좌표 기준) ---
+// --- 윷놀이 정밀 경로 이동 계산 함수 ---
 function getNextPosition(currentPos, steps) {
-  // 1. 대기 구역(0)에서 처음 출발할 때
+  // 1. 출발 안 한 대기 말
   if (currentPos === 0) {
-    return steps; // 도(1) -> 1번, 개(2) -> 2번, 걸(3) -> 3번...
+    return steps; // 도(1)->1, 개(2)->2, 걸(3)->3, 윷(4)->4, 모(5)->5
   }
 
   let pos = currentPos;
 
-  // 2. 5번 (우상단 모서리) 진입 지름길
-  if (pos === 5) {
-    // 5번 다음 칸은 대각선 20번 칸
-    pos = 19 + steps;
-    if (pos > 24) {
-      // 대각선1 분기점(22:중앙) 지나고 나면 14번(좌하단) 방향 연계
-      pos = 14 + (pos - 24);
-    }
-    return pos;
+  // 2. 정확히 모서리에 멈춰 서있을 때만 지름길 진입
+  if (pos === 5) { // 우상단 모서리
+    return 19 + steps; // 20번(대각선 첫번째 점)부터 진입
   }
-  
-  // 3. 10번 (좌상단 모서리) 진입 지름길
-  if (pos === 10) {
-    // 10번 다음 칸은 대각선 25번 칸
-    pos = 24 + steps;
-    if (pos > 28) {
-      // 대각선2 끝(28) 지나면 19번(출구) 방향 연계
-      pos = 19 + (pos - 28);
-    }
-    return pos;
+  if (pos === 10) { // 좌상단 모서리
+    return 24 + steps; // 25번(대각선 첫번째 점)부터 진입
+  }
+  if (pos === 22) { // 방아깨비 (중앙점)
+    let nextPos = 26 + steps;
+    if (nextPos > 28) nextPos = 19 + (nextPos - 28);
+    return nextPos;
   }
 
-  // 4. 22번 (중앙 방아깨비) 진입 지름길
-  if (pos === 22) {
-    // 중앙(22)에서 우하단(출구) 방향 대각선 진입
-    pos = 26 + steps;
-    if (pos > 28) {
-      pos = 19 + (pos - 28);
-    }
-    return pos;
-  }
-
-  // 5. 일반 직진 및 연결선 이동 (1칸씩 정확히 전진)
+  // 3. 모서리가 아닌 곳에서 출발한 말은 무조건 1칸씩 순서대로 직진
   for (let i = 0; i < steps; i++) {
-    if (pos === 19) { pos = 14; continue; } // 외곽 바퀴 회전 연결
-    if (pos === 24) { pos = 14; continue; } // 대각선 1 종료 후 14번 연결
-    if (pos === 28) { pos = 19; continue; } // 대각선 2 종료 후 19번(출구) 연결
-    
+    // 코스 꺾이는 연결점 처리
+    if (pos === 19) { pos = 14; continue; } // 외곽 한바퀴 회전
+    if (pos === 24) { pos = 14; continue; } // 대각선1 종료 후 좌하단(14번)으로 연결
+    if (pos === 28) { pos = 19; continue; } // 대각선2 종료 후 출구(19번)로 연결
+
     pos++;
   }
 
-  if (pos > 28) return 30; // 30: 완주 (판 밖으로 나감)
+  if (pos > 28) return 30; // 완주
   return pos;
 }
 
@@ -160,14 +141,11 @@ io.on('connection', (socket) => {
     const myTokens = room.tokens[socket.id];
     let currentPos = myTokens[tokenIndex];
 
-    // 정확한 이동 위치 계산
     let newPos = getNextPosition(currentPos, steps);
-
     myTokens[tokenIndex] = newPos;
 
     let caughtOpponent = false;
 
-    // 상대방 말 잡기 검사 (대기 0 및 완주 30 제외)
     if (newPos > 0 && newPos < 30) {
       Object.keys(room.tokens).forEach(otherPlayerId => {
         if (otherPlayerId !== socket.id) {
