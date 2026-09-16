@@ -23,39 +23,34 @@ function rollYut() {
   return '도';
 }
 
-// --- 윷놀이 정밀 경로 이동 계산 함수 ---
 function getNextPosition(currentPos, steps) {
-  // 1. 출발 안 한 대기 말
   if (currentPos === 0) {
-    return steps; // 도(1)->1, 개(2)->2, 걸(3)->3, 윷(4)->4, 모(5)->5
+    return steps;
   }
 
   let pos = currentPos;
 
-  // 2. 정확히 모서리에 멈춰 서있을 때만 지름길 진입
-  if (pos === 5) { // 우상단 모서리
-    return 19 + steps; // 20번(대각선 첫번째 점)부터 진입
+  if (pos === 5) {
+    return 19 + steps;
   }
-  if (pos === 10) { // 좌상단 모서리
-    return 24 + steps; // 25번(대각선 첫번째 점)부터 진입
+  if (pos === 10) {
+    return 24 + steps;
   }
-  if (pos === 22) { // 방아깨비 (중앙점)
+  if (pos === 22) {
     let nextPos = 26 + steps;
     if (nextPos > 28) nextPos = 19 + (nextPos - 28);
     return nextPos;
   }
 
-  // 3. 모서리가 아닌 곳에서 출발한 말은 무조건 1칸씩 순서대로 직진
   for (let i = 0; i < steps; i++) {
-    // 코스 꺾이는 연결점 처리
-    if (pos === 19) { pos = 14; continue; } // 외곽 한바퀴 회전
-    if (pos === 24) { pos = 14; continue; } // 대각선1 종료 후 좌하단(14번)으로 연결
-    if (pos === 28) { pos = 19; continue; } // 대각선2 종료 후 출구(19번)로 연결
+    if (pos === 19) { pos = 14; continue; }
+    if (pos === 24) { pos = 14; continue; }
+    if (pos === 28) { pos = 19; continue; }
 
     pos++;
   }
 
-  if (pos > 28) return 30; // 완주
+  if (pos > 28) return 30; // 완주 (판 밖으로 나감)
   return pos;
 }
 
@@ -141,17 +136,31 @@ io.on('connection', (socket) => {
     const myTokens = room.tokens[socket.id];
     let currentPos = myTokens[tokenIndex];
 
+    // 이동할 새 위치 계산
     let newPos = getNextPosition(currentPos, steps);
-    myTokens[tokenIndex] = newPos;
+
+    // 🔥 [핵심 추가] 말 업기 로직 🔥
+    // 대기 중(0)이 아닌 판 위에 있던 같은 위치의 모든 '내 말'들을 함께 이동!
+    if (currentPos !== 0) {
+      myTokens.forEach((pos, idx) => {
+        if (pos === currentPos) {
+          myTokens[idx] = newPos;
+        }
+      });
+    } else {
+      // 대기실에서 출발할 때는 선택한 개별 말 1개만 출발
+      myTokens[tokenIndex] = newPos;
+    }
 
     let caughtOpponent = false;
 
+    // 상대방 말 잡기 검사 (대기 0 및 완주 30 제외)
     if (newPos > 0 && newPos < 30) {
       Object.keys(room.tokens).forEach(otherPlayerId => {
         if (otherPlayerId !== socket.id) {
           room.tokens[otherPlayerId].forEach((otherPos, oIdx) => {
             if (otherPos === newPos) {
-              room.tokens[otherPlayerId][oIdx] = 0;
+              room.tokens[otherPlayerId][oIdx] = 0; // 잡힌 상대 말은 대기실로
               caughtOpponent = true;
             }
           });
