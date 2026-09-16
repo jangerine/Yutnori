@@ -1,4 +1,4 @@
-￦<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -16,7 +16,6 @@
     .active-turn { font-weight: bold; color: #007bff; }
     #game-area { display: none; }
 
-    /* --- 3D 윷 던지기 오버레이 스타일 --- */
     #yut-3d-modal {
       display: none;
       position: fixed;
@@ -43,12 +42,10 @@
       text-shadow: 0 2px 4px rgba(0,0,0,0.8);
     }
   </style>
-  <!-- Three.js 3D 라이브러리 CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-  <!-- 3D 윷 애니메이션 팝업 창 -->
   <div id="yut-3d-modal">
     <div id="yut-3d-container"></div>
     <div id="yut-3d-text">윷 던지는 중...</div>
@@ -133,9 +130,7 @@
 
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
 
-    // --- Three.js 3D 윷 연출 시스템 초기화 ---
     let yutScene, yutCamera, yutRenderer, yutSticks = [];
-    let isAnimatingYut = false;
 
     function init3DYut() {
       const container = document.getElementById('yut-3d-container');
@@ -156,7 +151,6 @@
       yutRenderer.setSize(320, 320);
       container.appendChild(yutRenderer.domElement);
 
-      // 윷 가락 4개 생성 (반원 기둥 모양)
       const stickGeo = new THREE.CylinderGeometry(0.3, 0.3, 3, 16, 1, false, 0, Math.PI);
       const woodMat = new THREE.MeshStandardMaterial({ color: 0xd2a679, roughness: 0.4 });
       const flatMat = new THREE.MeshStandardMaterial({ color: 0xfff8dc, roughness: 0.2 });
@@ -164,12 +158,9 @@
       const offsets = [-1.2, -0.4, 0.4, 1.2];
       for (let i = 0; i < 4; i++) {
         const group = new THREE.Group();
-        
-        // 둥근 등 부분
         const roundMesh = new THREE.Mesh(stickGeo, woodMat);
         group.add(roundMesh);
 
-        // 평평한 배 부분
         const flatGeo = new THREE.PlaneGeometry(0.6, 3);
         const flatMesh = new THREE.Mesh(flatGeo, flatMat);
         flatMesh.rotation.y = Math.PI / 2;
@@ -182,18 +173,15 @@
     }
     init3DYut();
 
-    // 3D 윷 던지기 연출 함수
     function animate3DYut(result, callback) {
       const modal = document.getElementById('yut-3d-modal');
       const text = document.getElementById('yut-3d-text');
       modal.style.display = 'flex';
       text.innerText = "윷 던지는 중...";
 
-      // 결과에 따른 평평한 면(배) 수 결정 (도:1, 개:2, 걸:3, 윷:4, 모:0)
       const flatCountMap = { '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 0 };
       const flatCount = flatCountMap[result] ?? 0;
 
-      // 4개 중 몇 번째 가락이 배(평평한 면)를 위로 할지 지정
       const isFlatTarget = [false, false, false, false];
       let assigned = 0;
       while (assigned < flatCount) {
@@ -205,7 +193,7 @@
       }
 
       let startTime = performance.now();
-      let duration = 1200; // 애니메이션 시간 (1.2초)
+      let duration = 1200;
 
       function renderFrame(now) {
         let progress = (now - startTime) / duration;
@@ -213,14 +201,12 @@
 
         yutSticks.forEach((stick, idx) => {
           if (progress < 0.7) {
-            // 던져져서 회전 및 바운스
             stick.position.y = Math.sin(progress / 0.7 * Math.PI) * 4;
             stick.rotation.x += 0.3;
             stick.rotation.z += 0.2;
           } else {
-            // 바닥에 안착 (결과 각도로 회전 착지)
             stick.position.y = 0;
-            let targetRotZ = isFlatTarget[idx] ? Math.PI / 2 : -Math.PI / 2; // 평평한 면 / 둥근 면
+            let targetRotZ = isFlatTarget[idx] ? Math.PI / 2 : -Math.PI / 2;
             stick.rotation.x = 0;
             stick.rotation.z = targetRotZ;
           }
@@ -279,7 +265,6 @@
     });
 
     socket.on('yutResult', ({ player, result }) => {
-      // 3D 윷 던지기 연출 시작
       animate3DYut(result, () => {
         isYutOrMoResult = (result === '윷' || result === '모');
         let extraText = isYutOrMoResult ? ' 🎉 [한 번 더 던지기 획득!]' : '';
@@ -420,9 +405,16 @@
       ctx.font = '12px sans-serif';
       ctx.fillText('대기 중인 말 (클릭하여 선택)', 20, 375);
 
+      // 🔥 말 카운트 및 업은 말 겹쳐서 시각화하기 🔥
       playersData.forEach((player) => {
         const pTokens = tokensData[player.id] || [0, 0, 0, 0];
         const color = playerColors[player.number] || '#e74c3c';
+
+        // 위치별 몇 개의 말이 겹쳐있는지 계산
+        const posCounts = {};
+        pTokens.forEach(p => {
+          if (p > 0 && p < 30) posCounts[p] = (posCounts[p] || 0) + 1;
+        });
 
         pTokens.forEach((pos, tIdx) => {
           let x = 0, y = 0;
@@ -437,6 +429,7 @@
 
           const isSelected = (player.id === myId && tIdx === selectedTokenIndex);
 
+          // 말 원 그리기
           ctx.beginPath();
           ctx.arc(x, y, isSelected ? 11 : 9, 0, Math.PI * 2);
           ctx.fillStyle = color;
@@ -444,6 +437,15 @@
           ctx.lineWidth = 2;
           ctx.strokeStyle = '#fff';
           ctx.stroke();
+
+          // 🔥 업어진 말이 2개 이상일 때 숫자(x2, x3) 표시 🔥
+          if (pos > 0 && pos < 30 && posCounts[pos] > 1) {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${posCounts[pos]}`, x, y);
+          }
 
           if (isSelected) {
             ctx.beginPath();
