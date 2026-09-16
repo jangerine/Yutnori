@@ -143,7 +143,7 @@
 
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
 
-    // --- 고품질 3D 윷 비주얼 시스템 ---
+    // --- 3D 윷 시스템 ---
     let yutScene, yutCamera, yutRenderer;
     let yutSticks = [];
     const stickPosX = [-2.1, -0.7, 0.7, 2.1];
@@ -151,7 +151,6 @@
     function createYutMesh() {
       const group = new THREE.Group();
 
-      // 재질 설정 (은은한 나뭇결 광택 및 따뜻한 우드톤)
       const woodMaterial = new THREE.MeshStandardMaterial({
         color: 0x9e693b,
         roughness: 0.4,
@@ -162,19 +161,16 @@
         roughness: 0.3
       });
 
-      // 1. 둥근 등 부분 (반원기둥)
       const roundGeo = new THREE.CylinderGeometry(0.38, 0.38, 3.2, 24, 1, false, 0, Math.PI);
       const roundMesh = new THREE.Mesh(roundGeo, woodMaterial);
       roundMesh.rotation.y = -Math.PI / 2;
       group.add(roundMesh);
 
-      // 2. 평평한 배 부분 (사각 마감)
       const flatGeo = new THREE.PlaneGeometry(0.76, 3.2);
       const flatMesh = new THREE.Mesh(flatGeo, flatMaterial);
       flatMesh.rotation.y = Math.PI / 2;
       group.add(flatMesh);
 
-      // 3. 위/아래 양 끝을 매끄럽게 다듬는 캡
       const capGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.05, 24, 1, false, 0, Math.PI);
       
       const topCap = new THREE.Mesh(capGeo, woodMaterial);
@@ -198,7 +194,6 @@
       yutCamera.position.set(0, 0, 7.5);
       yutCamera.lookAt(0, 0, 0);
 
-      // 풍성한 입체감을 위한 입체 조명 조합
       const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
       mainLight.position.set(3, 8, 10);
       yutScene.add(mainLight);
@@ -224,6 +219,7 @@
     }
     init3DYut();
 
+    // --- 물리 애니메이션 엔진 개선 ---
     function animate3DYut(result, style, callback) {
       const modal = document.getElementById('yut-3d-modal');
       const text = document.getElementById('yut-3d-text');
@@ -252,13 +248,23 @@
         }
       }
 
-      let startTime = performance.now();
-      let duration = 1200;
+      // 던지기 스타일별 파라미터 조절
+      let jumpHeight = 2.4;
+      let rotSpeedMult = 1.0;
+      let duration = 1400;
 
-      const speeds = yutSticks.map(() => ({
-        x: (Math.random() * 0.35 + 0.25) * (Math.random() > 0.5 ? 1 : -1),
-        z: (Math.random() * 0.35 + 0.25) * (Math.random() > 0.5 ? 1 : -1)
+      if (style === 'high') { jumpHeight = 3.6; duration = 1600; }
+      else if (style === 'spin') { rotSpeedMult = 2.3; }
+      else if (style === 'gentle') { jumpHeight = 1.5; rotSpeedMult = 0.6; duration = 1200; }
+
+      // 각 윷별 독립 난수 부여
+      const stickConfigs = yutSticks.map((_, idx) => ({
+        totalRotX: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * (Math.random() > 0.5 ? 1 : -1) * rotSpeedMult,
+        totalRotZ: (Math.random() - 0.5) * 1.5 * rotSpeedMult,
+        offsetY: (Math.random() - 0.5) * 0.3
       }));
+
+      let startTime = performance.now();
 
       function renderFrame(now) {
         let elapsed = now - startTime;
@@ -267,20 +273,32 @@
         if (progress > 1) progress = 1;
 
         yutSticks.forEach((stick, idx) => {
+          const cfg = stickConfigs[idx];
           stick.position.x = stickPosX[idx];
 
-          if (progress < 0.82) {
-            let p = progress / 0.82;
-            stick.position.y = Math.sin(p * Math.PI) * 2.2;
-            stick.rotation.x += speeds[idx].x;
-            stick.rotation.z += speeds[idx].z;
+          if (progress < 0.85) {
+            let p = progress / 0.85;
+            // 1. 자연스러운 포물선 Y축 점프 (Sine 곡선)
+            stick.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
+
+            // 2. 공중 연속 회전
+            stick.rotation.x = p * cfg.totalRotX;
+            stick.rotation.z = p * cfg.totalRotZ;
           } else {
+            // 3. 착지 및 정착 감속 구간 (0.85 ~ 1.0)
+            let settleP = (progress - 0.85) / 0.15;
+            let easeOut = 1 - Math.pow(1 - settleP, 3); // Cubic Ease-Out
+
             stick.position.y = 0;
-            stick.rotation.x = 0;
-            stick.rotation.z = 0;
-            // 평평한 면(배)은 정면(0 rad), 둥근 면(등)은 뒤쪽(PI rad)
+
+            // X, Z 회전 축 부드럽게 0으로 수렴 (정면 정렬)
+            stick.rotation.x = stick.rotation.x % (Math.PI * 2);
+            stick.rotation.x *= (1 - easeOut);
+            stick.rotation.z *= (1 - easeOut);
+
+            // 최종 Y 회전축 보정 (목표: 배=0 rad, 등=PI rad)
             let targetRotY = isFlatTarget[idx] ? 0 : Math.PI;
-            stick.rotation.y = targetRotY;
+            stick.rotation.y = THREE.MathUtils.lerp(stick.rotation.y, targetRotY, easeOut);
           }
         });
 
