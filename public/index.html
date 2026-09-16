@@ -141,7 +141,8 @@
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
 
     let yutScene, yutCamera, yutRenderer, yutSticks = [];
-    const defaultOffsets = [-1.3, -0.45, 0.45, 1.3];
+    // 윷가락 4개의 간격을 화면 폭에 딱 맞게 세밀하게 조정
+    const defaultOffsets = [-1.0, -0.33, 0.33, 1.0];
 
     function init3DYut() {
       const container = document.getElementById('yut-3d-container');
@@ -149,21 +150,24 @@
       yutScene.background = new THREE.Color(0xe0cfb3);
 
       yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-      yutCamera.position.set(0, 16, 3);
+      
+      // 📷 [핵심 수정] 위에서 아래를 똑바로 내려다보는 시점으로 변경 (높이 Y: 8.5, Z: 0.1)
+      yutCamera.position.set(0, 8.5, 0.1);
       yutCamera.lookAt(0, 0, 0);
 
+      // 직사 광선 조명을 조율하여 입체감 유지
       const light1 = new THREE.DirectionalLight(0xffffff, 1.2);
-      light1.position.set(0, 20, 5);
+      light1.position.set(2, 10, 5);
       yutScene.add(light1);
       
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
       yutScene.add(ambientLight);
 
       yutRenderer = new THREE.WebGLRenderer({ antialias: true });
       yutRenderer.setSize(320, 320);
       container.appendChild(yutRenderer.domElement);
 
-      const stickGeo = new THREE.CylinderGeometry(0.35, 0.35, 3.2, 16, 1, false, 0, Math.PI);
+      const stickGeo = new THREE.CylinderGeometry(0.28, 0.28, 2.8, 16, 1, false, 0, Math.PI);
       const woodMat = new THREE.MeshStandardMaterial({ color: 0xc48c58, roughness: 0.5 });
       const flatMat = new THREE.MeshStandardMaterial({ color: 0xfffae6, roughness: 0.2 });
 
@@ -172,7 +176,7 @@
         const roundMesh = new THREE.Mesh(stickGeo, woodMat);
         group.add(roundMesh);
 
-        const flatGeo = new THREE.PlaneGeometry(0.7, 3.2);
+        const flatGeo = new THREE.PlaneGeometry(0.56, 2.8);
         const flatMesh = new THREE.Mesh(flatGeo, flatMat);
         flatMesh.rotation.y = Math.PI / 2;
         group.add(flatMesh);
@@ -212,16 +216,12 @@
 
       let startTime = performance.now();
       let baseDuration = style === 'high' ? 1600 : (style === 'spin' ? 1000 : 1200);
-      let baseHeight = style === 'high' ? 7.5 : (style === 'gentle' ? 2.0 : 4.5);
       let baseSpeed = style === 'spin' ? 0.8 : (style === 'gentle' ? 0.2 : 0.4);
 
       const stickPhysics = yutSticks.map((_, i) => ({
         speedX: (Math.random() - 0.5) * baseSpeed * 1.5,
         speedY: (Math.random() - 0.5) * baseSpeed * 1.5,
         speedZ: (Math.random() - 0.5) * baseSpeed * 1.5,
-        heightFactor: baseHeight * (0.8 + Math.random() * 0.4),
-        offsetX: (Math.random() - 0.5) * 0.6,
-        offsetZ: (Math.random() - 0.5) * 1.0,
         spinDirX: Math.random() > 0.5 ? 1 : -1,
         spinDirY: Math.random() > 0.5 ? 1 : -1
       }));
@@ -237,22 +237,21 @@
             let flyProgress = progress / 0.75;
             let flySin = Math.sin(flyProgress * Math.PI);
 
-            stick.position.y = flySin * phys.heightFactor;
-            stick.position.x = defaultOffsets[idx] + flySin * phys.offsetX;
-            stick.position.z = flySin * phys.offsetZ;
+            // 탑뷰 시점에 맞춘 공중 회전 효과
+            stick.position.y = flySin * 2.0; 
+            stick.position.x = defaultOffsets[idx];
+            stick.position.z = 0;
 
             stick.rotation.x += phys.speedX * phys.spinDirX;
             stick.rotation.y += phys.speedY * phys.spinDirY;
             stick.rotation.z += phys.speedZ;
           } else {
-            // 🔧 [수정 포인트] 착지 시 4개 윷가락의 간격(defaultOffsets[idx])을 정확히 유지
-            let landProgress = (progress - 0.75) / 0.25;
-            let remainingOffsetX = phys.offsetX * (1 - landProgress);
-            
+            // 바닥에 정돈 착지할 때 4개가 나란히 배치됨
             stick.position.y = 0;
-            stick.position.x = defaultOffsets[idx] + remainingOffsetX;
-            stick.position.z = phys.offsetZ * (1 - landProgress);
+            stick.position.x = defaultOffsets[idx];
+            stick.position.z = 0;
 
+            // 평평한 면(배)은 정면(위)을 향하고, 둥근 면(등)은 뒤를 향하도록 회전값 조율
             let targetRotZ = isFlatTarget[idx] ? Math.PI / 2 : -Math.PI / 2;
             stick.rotation.x = 0;
             stick.rotation.y = 0;
