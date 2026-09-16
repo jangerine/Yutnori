@@ -145,14 +145,14 @@
 
     // --- 3D 윷 시스템 ---
     let yutScene, yutCamera, yutRenderer;
-    let yutSticks = [];
+    let yutGroups = [];
     const stickPosX = [-1.8, -0.6, 0.6, 1.8];
 
     function createYutMesh() {
       const shape = new THREE.Shape();
       const radius = 0.38;
       
-      // 반원 단면 (평평한 면이 바닥/정면을 향하도록 세팅)
+      // 반원 단면 (평평한 배가 Z=0 기준 위쪽을 향하도록 세팅)
       shape.absarc(0, 0, radius, 0, Math.PI, false);
       shape.lineTo(-radius, 0);
 
@@ -175,16 +175,23 @@
       });
 
       const mesh = new THREE.Mesh(geometry, woodMaterial);
-      return mesh;
+      
+      // 메쉬 자체의 정렬 각도를 고정 (세로 축 및 평평한 면 기준 정리)
+      mesh.rotation.x = -Math.PI / 2;
+
+      const group = new THREE.Group();
+      group.add(mesh);
+
+      return group;
     }
 
     function init3DYut() {
       const container = document.getElementById('yut-3d-container');
       yutScene = new THREE.Scene();
 
-      // Top-down 카메라
+      // 위에서 내려다보는 Top-down 카메라
       yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-      yutCamera.position.set(0, 7.5, 0.1);
+      yutCamera.position.set(0, 7.5, 0);
       yutCamera.lookAt(0, 0, 0);
 
       const mainLight = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -204,12 +211,10 @@
       container.appendChild(yutRenderer.domElement);
 
       for (let i = 0; i < 4; i++) {
-        const yut = createYutMesh();
-        yut.position.x = stickPosX[i];
-        // 세로 길이를 Y축 방향으로 배치
-        yut.rotation.x = Math.PI / 2;
-        yutScene.add(yut);
-        yutSticks.push(yut);
+        const yutGroup = createYutMesh();
+        yutGroup.position.x = stickPosX[i];
+        yutScene.add(yutGroup);
+        yutGroups.push(yutGroup);
       }
     }
     init3DYut();
@@ -250,9 +255,9 @@
       else if (style === 'spin') { rotSpeedMult = 2.2; }
       else if (style === 'gentle') { jumpHeight = 1.2; rotSpeedMult = 0.6; duration = 1200; }
 
-      const stickConfigs = yutSticks.map(() => ({
-        totalRotY: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * (Math.random() > 0.5 ? 1 : -1) * rotSpeedMult,
-        totalRotZ: (Math.random() - 0.5) * 0.8 * rotSpeedMult,
+      const stickConfigs = yutGroups.map(() => ({
+        totalRotX: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * rotSpeedMult,
+        totalRotZ: (Math.random() - 0.5) * 1.5 * rotSpeedMult,
         offsetY: (Math.random() - 0.5) * 0.2
       }));
 
@@ -264,28 +269,32 @@
 
         if (progress > 1) progress = 1;
 
-        yutSticks.forEach((stick, idx) => {
+        yutGroups.forEach((group, idx) => {
           const cfg = stickConfigs[idx];
-          stick.position.x = stickPosX[idx];
+          group.position.x = stickPosX[idx];
 
           if (progress < 0.85) {
             let p = progress / 0.85;
-            stick.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
+            group.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
 
-            stick.rotation.x = Math.PI / 2;
-            stick.rotation.y = p * cfg.totalRotY;
-            stick.rotation.z = p * cfg.totalRotZ;
+            // 공중 스핀 회전
+            group.rotation.x = p * cfg.totalRotX;
+            group.rotation.z = p * cfg.totalRotZ;
+            group.rotation.y = 0;
           } else {
             let settleP = (progress - 0.85) / 0.15;
             let easeOut = 1 - Math.pow(1 - settleP, 3);
 
-            stick.position.y = 0;
-            stick.rotation.x = Math.PI / 2;
-            stick.rotation.z *= (1 - easeOut);
+            group.position.y = 0;
+            group.rotation.z *= (1 - easeOut);
+            group.rotation.y = 0;
 
-            // [핵심 교정]: 배(평평함) = 0도 (위 시점에서 만곡면 없이 평평함), 등(둥근면) = 180도 (둥글게 볼록함)
-            let targetRotY = isFlatTarget[idx] ? 0 : Math.PI;
-            stick.rotation.y = THREE.MathUtils.lerp(stick.rotation.y, targetRotY, easeOut);
+            // [핵심 설정]: 평평한 배(도/개/걸/윷) = 0, 둥근 등(모) = Math.PI (180도 뒤집힘)
+            let targetRotX = isFlatTarget[idx] ? 0 : Math.PI;
+            
+            // 현재 회전각을 targetRotX로 정교하게 정리
+            let currentRotX = group.rotation.x % (Math.PI * 2);
+            group.rotation.x = THREE.MathUtils.lerp(currentRotX, targetRotX, easeOut);
           }
         });
 
