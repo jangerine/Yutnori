@@ -10,57 +10,59 @@ app.use(express.static('public'));
 
 const rooms = {};
 
-// 대각선 및 외곽 완주 이동 경로 계산
+// 전체 윷놀이 경로를 배열 기반으로 명확히 정의하여 이동 계산
 function calculateTargetPos(currentPos, steps) {
+  // 1. 빽도(-1) 처리
   if (steps === -1) {
     if (currentPos === 0) return 0;
     if (currentPos === 1) return 20;
     if (currentPos === 21) return 5;
     if (currentPos === 26) return 10;
     if (currentPos === 23) return 22;
+    if (currentPos === 30) return 30; // 완주한 말은 빽도 불가
     return currentPos - 1;
   }
 
+  // 2. 시작 전 상태
   if (currentPos === 0) return steps;
 
-  // 우상 모서리(5) 지름길: 총 11칸 (11번째 이동 시 완주)
+  // 3. 각위치별 전체 출구까지의 고정 경로 정의 (30: 완주)
+  let route = [];
+
   if (currentPos === 5) {
-    const path5 = [20, 21, 22, 23, 24, 19, 14, 13, 12, 11, 10];
-    if (steps > path5.length) return -1; // 칸 수 초과 시 이동 불가
-    return steps === path5.length ? 30 : path5[steps - 1];
-  }
-
-  // 좌상 모서리(10) 지름길: 총 10칸
-  if (currentPos === 10) {
-    const path10 = [25, 26, 22, 23, 24, 19, 14, 13, 12, 11];
-    if (steps > path10.length) return -1; // 칸 수 초과 시 이동 불가
-    return steps === path10.length ? 30 : path10[steps - 1];
-  }
-
-  let pos = currentPos;
-  let remainingSteps = steps;
-
-  for (let i = 0; i < steps; i++) {
-    if (pos === 22) { pos = 23; remainingSteps--; continue; }
-    if (pos === 23) { pos = 24; remainingSteps--; continue; }
-    if (pos === 24) { pos = 19; remainingSteps--; continue; }
-    if (pos === 19) { pos = 14; remainingSteps--; continue; }
-    if (pos === 28) { pos = 19; remainingSteps--; continue; }
-
-    // 완주 직전 칸(14)에서 완주 지점(30) 진입 판단
-    if (pos === 14) {
-      if (remainingSteps === 1) return 30; // 정확히 남은 1칸으로 골인
-      if (remainingSteps > 1) return -1;   // 칸 수 초과로 골인 불가
+    route = [20, 21, 22, 23, 24, 19, 14, 13, 12, 11, 10, 30];
+  } else if (currentPos === 10) {
+    route = [25, 26, 22, 23, 24, 19, 14, 13, 12, 11, 30];
+  } else if (currentPos === 22) {
+    route = [23, 24, 19, 14, 13, 12, 11, 10, 30];
+  } else if (currentPos === 23) {
+    route = [24, 19, 14, 13, 12, 11, 10, 30];
+  } else if (currentPos === 24) {
+    route = [19, 14, 13, 12, 11, 10, 30];
+  } else if (currentPos === 28) {
+    route = [19, 14, 13, 12, 11, 10, 30];
+  } else if (currentPos >= 20 && currentPos <= 21) {
+    route = [];
+    for (let p = currentPos + 1; p <= 22; p++) route.push(p);
+    route.push(23, 24, 19, 14, 13, 12, 11, 10, 30);
+  } else if (currentPos >= 25 && currentPos <= 26) {
+    route = [];
+    for (let p = currentPos + 1; p <= 26; p++) route.push(p);
+    route.push(22, 23, 24, 19, 14, 13, 12, 11, 30);
+  } else if (currentPos >= 1 && currentPos <= 19) {
+    // 외곽 이동 경로
+    route = [];
+    let p = currentPos;
+    while (p !== 20) {
+      p++;
+      if (p === 20) break;
+      route.push(p);
     }
-
-    pos++;
-    remainingSteps--;
+    route.push(30); // 20번(출구 모서리) 다음은 완주(30)
   }
 
-  if (pos === 30) return 30;
-  if (pos > 30) return -1; // 초과 이동 금지
-
-  return pos;
+  if (steps > route.length) return -1; // 완주 칸 수 초과 시 이동 불가
+  return route[steps - 1];
 }
 
 io.on('connection', (socket) => {
@@ -86,7 +88,7 @@ io.on('connection', (socket) => {
     const playerNumber = room.players.length + 1;
     const player = { id: socket.id, nickname, number: playerNumber };
     room.players.push(player);
-    room.tokens[socket.id] = [0, 0, 0, 0]; // 각 플레이어당 말 4개
+    room.tokens[socket.id] = [0, 0, 0, 0];
 
     io.to(roomId).emit('roomState', {
       players: room.players,
@@ -115,7 +117,6 @@ io.on('connection', (socket) => {
     const currentPlayer = room.players[room.currentTurnIndex];
     if (currentPlayer.id !== socket.id) return;
 
-    // 윷 던지기 확률 (빽도 포함)
     const yutResults = ['빽도', '도', '개', '걸', '윷', '모'];
     const weights = [1, 3, 6, 4, 1, 1];
     let totalWeight = weights.reduce((a, b) => a + b, 0);
@@ -146,13 +147,12 @@ io.on('connection', (socket) => {
 
     const targetPos = calculateTargetPos(currentPos, steps);
 
-    // 이동 불가(완주 초과)일 경우
     if (targetPos === -1) {
-      socket.emit('invalidMove', { message: '완주 칸 수를 초과하여 이동할 수 없습니다.' });
+      socket.emit('invalidMove', { message: '완주 칸 수를 초과하여 이동할 수 없습니다. 다른 말을 선택하세요.' });
       return;
     }
 
-    // 업기 판정을 위해 기존 같은 위치에 있던 내 말들 함께 이동
+    // 업기 판정: 출발지점(0)이나 완주지점(30)이 아닌 경우 같이 이동
     if (currentPos > 0 && currentPos < 30) {
       playerTokens.forEach((pos, idx) => {
         if (pos === currentPos) playerTokens[idx] = targetPos;
@@ -161,14 +161,14 @@ io.on('connection', (socket) => {
       playerTokens[tokenIndex] = targetPos;
     }
 
-    // 상대방 말 잡기 검증
+    // 상대방 말 잡기
     let caughtOpponent = false;
     if (targetPos > 0 && targetPos < 30) {
       Object.keys(room.tokens).forEach((pId) => {
         if (pId !== socket.id) {
           room.tokens[pId].forEach((opPos, idx) => {
             if (opPos === targetPos) {
-              room.tokens[pId][idx] = 0; // 시작 지점으로 리셋
+              room.tokens[pId][idx] = 0;
               caughtOpponent = true;
             }
           });
@@ -176,7 +176,6 @@ io.on('connection', (socket) => {
       });
     }
 
-    // 윷/모를 던졌거나 상대 말을 잡았으면 턴 유지
     const hasExtraTurn = isYutOrMo || caughtOpponent;
     if (!hasExtraTurn) {
       room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
