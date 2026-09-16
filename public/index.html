@@ -392,7 +392,7 @@
       drawBoard();
     });
 
-    // --- [완주 정확한 수 계산 및 경로 판단 함수] ---
+    // --- [배열 기반 완벽 경로 및 이동 계산] ---
     function calculateTargetPos(currentPos, steps) {
       if (steps === -1) {
         if (currentPos === 0) return 0;
@@ -400,46 +400,47 @@
         if (currentPos === 21) return 5;
         if (currentPos === 26) return 10;
         if (currentPos === 23) return 22;
+        if (currentPos === 30) return 30;
         return currentPos - 1;
       }
 
       if (currentPos === 0) return steps;
 
+      let route = [];
+
       if (currentPos === 5) {
-        const path5 = [20, 21, 22, 23, 24, 19, 14, 13, 12, 11, 10];
-        if (steps > path5.length) return -1;
-        return steps === path5.length ? 30 : path5[steps - 1];
-      }
-
-      if (currentPos === 10) {
-        const path10 = [25, 26, 22, 23, 24, 19, 14, 13, 12, 11];
-        if (steps > path10.length) return -1;
-        return steps === path10.length ? 30 : path10[steps - 1];
-      }
-
-      let pos = currentPos;
-      let remainingSteps = steps;
-
-      for (let i = 0; i < steps; i++) {
-        if (pos === 22) { pos = 23; remainingSteps--; continue; }
-        if (pos === 23) { pos = 24; remainingSteps--; continue; }
-        if (pos === 24) { pos = 19; remainingSteps--; continue; }
-        if (pos === 19) { pos = 14; remainingSteps--; continue; }
-        if (pos === 28) { pos = 19; remainingSteps--; continue; }
-
-        if (pos === 14) {
-          if (remainingSteps === 1) return 30;
-          if (remainingSteps > 1) return -1;
+        route = [20, 21, 22, 23, 24, 19, 14, 13, 12, 11, 10, 30];
+      } else if (currentPos === 10) {
+        route = [25, 26, 22, 23, 24, 19, 14, 13, 12, 11, 30];
+      } else if (currentPos === 22) {
+        route = [23, 24, 19, 14, 13, 12, 11, 10, 30];
+      } else if (currentPos === 23) {
+        route = [24, 19, 14, 13, 12, 11, 10, 30];
+      } else if (currentPos === 24) {
+        route = [19, 14, 13, 12, 11, 10, 30];
+      } else if (currentPos === 28) {
+        route = [19, 14, 13, 12, 11, 10, 30];
+      } else if (currentPos >= 20 && currentPos <= 21) {
+        route = [];
+        for (let p = currentPos + 1; p <= 22; p++) route.push(p);
+        route.push(23, 24, 19, 14, 13, 12, 11, 10, 30);
+      } else if (currentPos >= 25 && currentPos <= 26) {
+        route = [];
+        for (let p = currentPos + 1; p <= 26; p++) route.push(p);
+        route.push(22, 23, 24, 19, 14, 13, 12, 11, 30);
+      } else if (currentPos >= 1 && currentPos <= 19) {
+        route = [];
+        let p = currentPos;
+        while (p !== 20) {
+          p++;
+          if (p === 20) break;
+          route.push(p);
         }
-
-        pos++;
-        remainingSteps--;
+        route.push(30);
       }
 
-      if (pos === 30) return 30;
-      if (pos > 30) return -1;
-
-      return pos;
+      if (steps > route.length) return -1;
+      return route[steps - 1];
     }
 
     canvas.addEventListener('click', (e) => {
@@ -454,7 +455,7 @@
       if (selectedTokenIndex === null) {
         for (let tIdx = 0; tIdx < myTokens.length; tIdx++) {
           const pos = myTokens[tIdx];
-          if (pos === 30) continue; // 완주한 말 제외
+          if (pos === 30) continue;
 
           let tokenPos = (pos === 0) ? { x: 50 + tIdx * 35, y: 395 } : (pos < boardCoords.length ? boardCoords[pos] : null);
 
@@ -523,6 +524,7 @@
         ctx.stroke();
       }
 
+      // 출구 완주 지점 표시
       ctx.beginPath();
       ctx.arc(S + L, S + L, (targetBoardPos === 30) ? 15 : 12, 0, Math.PI * 2);
       ctx.fillStyle = (targetBoardPos === 30) ? '#2ecc71' : '#e67e22';
