@@ -181,9 +181,9 @@
       const container = document.getElementById('yut-3d-container');
       yutScene = new THREE.Scene();
 
-      // 위에서 직각으로 내려다보는 시점 설정
+      // Top-down 카메라
       yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-      yutCamera.position.set(0, 7.5, 1.0);
+      yutCamera.position.set(0, 7.5, 0.1);
       yutCamera.lookAt(0, 0, 0);
 
       const mainLight = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -249,7 +249,7 @@
 
       const stickConfigs = yutSticks.map(() => ({
         totalRotZ: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * (Math.random() > 0.5 ? 1 : -1) * rotSpeedMult,
-        totalRotY: (Math.random() - 0.5) * 1.2 * rotSpeedMult,
+        totalRotY: (Math.random() - 0.5) * 0.8 * rotSpeedMult,
         offsetY: (Math.random() - 0.5) * 0.2
       }));
 
@@ -269,10 +269,9 @@
             let p = progress / 0.85;
             stick.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
 
-            // 공중 공회전 설정
-            stick.rotation.x = Math.PI / 2 + p * cfg.totalRotZ;
+            stick.rotation.z = p * cfg.totalRotZ;
             stick.rotation.y = p * cfg.totalRotY;
-            stick.rotation.z = (Math.random() - 0.5) * 0.2;
+            stick.rotation.x = Math.PI / 2 + p * Math.PI * 2;
           } else {
             let settleP = (progress - 0.85) / 0.15;
             let easeOut = 1 - Math.pow(1 - settleP, 3);
@@ -281,7 +280,7 @@
             stick.rotation.y *= (1 - easeOut);
             stick.rotation.z *= (1 - easeOut);
 
-            // 상단 카메라 기준: 평평한 배(도/개/걸/윷) = Math.PI / 2, 둥근 등(모) = -Math.PI / 2
+            // 배(도/개/걸/윷) = Math.PI / 2, 등(모) = -Math.PI / 2
             let targetRotX = isFlatTarget[idx] ? (Math.PI / 2) : (-Math.PI / 2);
             stick.rotation.x = THREE.MathUtils.lerp(stick.rotation.x, targetRotX, easeOut);
           }
