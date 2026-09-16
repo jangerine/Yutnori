@@ -184,7 +184,6 @@
     }
     init3DYut();
 
-    // 🎲 윷 4개가 완전히 개별적으로 다르게 움직이도록 애니메이션 개편
     function animate3DYut(result, style, callback) {
       const modal = document.getElementById('yut-3d-modal');
       const text = document.getElementById('yut-3d-text');
@@ -216,14 +215,13 @@
       let baseHeight = style === 'high' ? 7.5 : (style === 'gentle' ? 2.0 : 4.5);
       let baseSpeed = style === 'spin' ? 0.8 : (style === 'gentle' ? 0.2 : 0.4);
 
-      // 💥 각 윷가락마다 서로 다른 물리 속성(랜덤성) 부여
       const stickPhysics = yutSticks.map((_, i) => ({
         speedX: (Math.random() - 0.5) * baseSpeed * 1.5,
         speedY: (Math.random() - 0.5) * baseSpeed * 1.5,
         speedZ: (Math.random() - 0.5) * baseSpeed * 1.5,
-        heightFactor: baseHeight * (0.8 + Math.random() * 0.4), // 높이 상이
-        offsetX: (Math.random() - 0.5) * 0.8,                 // X축 공중 이탈
-        offsetZ: (Math.random() - 0.5) * 1.2,                 // Z축 공중 이탈
+        heightFactor: baseHeight * (0.8 + Math.random() * 0.4),
+        offsetX: (Math.random() - 0.5) * 0.6,
+        offsetZ: (Math.random() - 0.5) * 1.0,
         spinDirX: Math.random() > 0.5 ? 1 : -1,
         spinDirY: Math.random() > 0.5 ? 1 : -1
       }));
@@ -239,21 +237,21 @@
             let flyProgress = progress / 0.75;
             let flySin = Math.sin(flyProgress * Math.PI);
 
-            // 높이 및 공중 흩어짐 다이내믹 연출
             stick.position.y = flySin * phys.heightFactor;
             stick.position.x = defaultOffsets[idx] + flySin * phys.offsetX;
             stick.position.z = flySin * phys.offsetZ;
 
-            // X, Y, Z 3축 모두 개별 고속 회전
             stick.rotation.x += phys.speedX * phys.spinDirX;
             stick.rotation.y += phys.speedY * phys.spinDirY;
             stick.rotation.z += phys.speedZ;
           } else {
-            // 바닥 착지 시 원래 열 위치로 정리되며 결과 면으로 정렬
+            // 🔧 [수정 포인트] 착지 시 4개 윷가락의 간격(defaultOffsets[idx])을 정확히 유지
             let landProgress = (progress - 0.75) / 0.25;
+            let remainingOffsetX = phys.offsetX * (1 - landProgress);
+            
             stick.position.y = 0;
-            stick.position.x = defaultOffsets[idx] + phys.offsetX * (1 - landProgress);
-            stick.position.z = 0;
+            stick.position.x = defaultOffsets[idx] + remainingOffsetX;
+            stick.position.z = phys.offsetZ * (1 - landProgress);
 
             let targetRotZ = isFlatTarget[idx] ? Math.PI / 2 : -Math.PI / 2;
             stick.rotation.x = 0;
