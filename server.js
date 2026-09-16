@@ -8,33 +8,64 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-// 방별 게임 상태 저장소
 const rooms = {};
 
-// 윷 던지기 확률 구현 (실제 윷놀이 확률 반영)
-function rollYut() {
-  const yuts = [];
-  for (let i = 0; i < 4; i++) {
-    // 약 60% 확률로 평평한 면(배)이 나옴
-    yuts.push(Math.random() < 0.6);
+// 대각선 및 외곽 완주 이동 경로 계산
+function calculateTargetPos(currentPos, steps) {
+  if (steps === -1) {
+    if (currentPos === 0) return 0;
+    if (currentPos === 1) return 20;
+    if (currentPos === 21) return 5;
+    if (currentPos === 26) return 10;
+    if (currentPos === 23) return 22;
+    return currentPos - 1;
   }
-  const flatCount = yuts.filter(isFlat => isFlat).length;
 
-  switch (flatCount) {
-    case 1: return '도';
-    case 2: return '개';
-    case 3: return '걸';
-    case 4: return '윷';
-    case 0: return '모';
-    default: return '도';
+  if (currentPos === 0) return steps;
+
+  // 우상 모서리(5) 지름길: 총 11칸 (11번째 이동 시 완주)
+  if (currentPos === 5) {
+    const path5 = [20, 21, 22, 23, 24, 19, 14, 13, 12, 11, 10];
+    if (steps > path5.length) return -1; // 칸 수 초과 시 이동 불가
+    return steps === path5.length ? 30 : path5[steps - 1];
   }
+
+  // 좌상 모서리(10) 지름길: 총 10칸
+  if (currentPos === 10) {
+    const path10 = [25, 26, 22, 23, 24, 19, 14, 13, 12, 11];
+    if (steps > path10.length) return -1; // 칸 수 초과 시 이동 불가
+    return steps === path10.length ? 30 : path10[steps - 1];
+  }
+
+  let pos = currentPos;
+  let remainingSteps = steps;
+
+  for (let i = 0; i < steps; i++) {
+    if (pos === 22) { pos = 23; remainingSteps--; continue; }
+    if (pos === 23) { pos = 24; remainingSteps--; continue; }
+    if (pos === 24) { pos = 19; remainingSteps--; continue; }
+    if (pos === 19) { pos = 14; remainingSteps--; continue; }
+    if (pos === 28) { pos = 19; remainingSteps--; continue; }
+
+    // 완주 직전 칸(14)에서 완주 지점(30) 진입 판단
+    if (pos === 14) {
+      if (remainingSteps === 1) return 30; // 정확히 남은 1칸으로 골인
+      if (remainingSteps > 1) return -1;   // 칸 수 초과로 골인 불가
+    }
+
+    pos++;
+    remainingSteps--;
+  }
+
+  if (pos === 30) return 30;
+  if (pos > 30) return -1; // 초과 이동 금지
+
+  return pos;
 }
 
 io.on('connection', (socket) => {
-  console.log(`유저 접속: ${socket.id}`);
-
-  // 1. 방 입장
   socket.on('joinRoom', ({ roomId, nickname }) => {
+    socket.roomId = roomId;
     socket.join(roomId);
 
     if (!rooms[roomId]) {
@@ -42,27 +73,20 @@ io.on('connection', (socket) => {
         players: [],
         currentTurnIndex: 0,
         gameStarted: false,
-        tokens: {}, // 유저별 말 위치 [0, 0, 0, 0]
-        extraThrow: false
+        tokens: {}
       };
     }
 
     const room = rooms[roomId];
-
     if (room.players.length >= 4) {
-      socket.emit('errorMsg', '방이 가득 찼습니다. (최대 4명)');
+      socket.emit('errorMsg', '방이 가득 찼습니다.');
       return;
     }
 
     const playerNumber = room.players.length + 1;
-    const player = {
-      id: socket.id,
-      nickname: nickname || `플레이어 ${playerNumber}`,
-      number: playerNumber
-    };
-
+    const player = { id: socket.id, nickname, number: playerNumber };
     room.players.push(player);
-    room.tokens[socket.id] = [0, 0, 0, 0]; // 말 4개 초기화 (0: 대기)
+    room.tokens[socket.id] = [0, 0, 0, 0]; // 각 플레이어당 말 4개
 
     io.to(roomId).emit('roomState', {
       players: room.players,
@@ -72,103 +96,79 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 2. 게임 시작
   socket.on('startGame', () => {
-    const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
-    if (!roomId) return;
-    const room = rooms[roomId];
-
-    if (room.players.length < 2) {
-      socket.emit('errorMsg', '2명 이상 참가해야 시작할 수 있습니다.');
-      return;
-    }
-
+    const room = rooms[socket.roomId];
+    if (!room || room.players.length < 2) return;
     room.gameStarted = true;
-    room.currentTurnIndex = 0;
 
-    io.to(roomId).emit('gameStarted', {
+    io.to(socket.roomId).emit('gameStarted', {
       players: room.players,
       currentTurn: room.players[room.currentTurnIndex],
       tokens: room.tokens
     });
   });
 
-  // 3. 윷 던지기 (던지기 스킬 style 수신)
   socket.on('throwYut', ({ style }) => {
-    const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
-    if (!roomId) return;
-    const room = rooms[roomId];
+    const room = rooms[socket.roomId];
+    if (!room || !room.gameStarted) return;
 
-    const currentTurnPlayer = room.players[room.currentTurnIndex];
-    if (currentTurnPlayer.id !== socket.id) return;
+    const currentPlayer = room.players[room.currentTurnIndex];
+    if (currentPlayer.id !== socket.id) return;
 
-    const result = rollYut();
-    
-    if (result === '윷' || result === '모') {
-      room.extraThrow = true;
+    // 윷 던지기 확률 (빽도 포함)
+    const yutResults = ['빽도', '도', '개', '걸', '윷', '모'];
+    const weights = [1, 3, 6, 4, 1, 1];
+    let totalWeight = weights.reduce((a, b) => a + b, 0);
+    let rand = Math.floor(Math.random() * totalWeight);
+
+    let result = '도';
+    for (let i = 0; i < yutResults.length; i++) {
+      if (rand < weights[i]) {
+        result = yutResults[i];
+        break;
+      }
+      rand -= weights[i];
     }
 
-    // 선택한 style 정보를 포함해 방 전체에 결과 전송
-    io.to(roomId).emit('yutResult', {
-      player: currentTurnPlayer,
+    io.to(socket.roomId).emit('yutResult', {
+      player: currentPlayer,
       result,
-      style: style || 'normal',
-      extraThrow: room.extraThrow
+      style
     });
   });
 
-  // 4. 말 이동 처리
   socket.on('moveToken', ({ tokenIndex, steps, isYutOrMo }) => {
-    const roomId = Array.from(socket.rooms).find(r => r !== socket.id);
-    if (!roomId) return;
-    const room = rooms[roomId];
+    const room = rooms[socket.roomId];
+    if (!room) return;
 
-    const currentTurnPlayer = room.players[room.currentTurnIndex];
-    if (currentTurnPlayer.id !== socket.id) return;
+    const playerTokens = room.tokens[socket.id];
+    const currentPos = playerTokens[tokenIndex];
 
-    const myTokens = room.tokens[socket.id];
-    const currentPos = myTokens[tokenIndex];
+    const targetPos = calculateTargetPos(currentPos, steps);
 
-    // 이동할 타겟 위치 계산
-    let targetPos = 0;
-    if (currentPos === 0) {
-      targetPos = steps;
-    } else if (currentPos === 5) {
-      targetPos = 19 + steps;
-    } else if (currentPos === 10) {
-      targetPos = 24 + steps;
-    } else if (currentPos === 22) {
-      let pos = 26 + steps;
-      targetPos = pos > 28 ? 19 + (pos - 28) : pos;
-    } else {
-      let pos = currentPos;
-      for (let i = 0; i < steps; i++) {
-        if (pos === 19 || pos === 24) { pos = 14; continue; }
-        if (pos === 28) { pos = 19; continue; }
-        pos++;
-      }
-      targetPos = pos > 28 ? 30 : pos; // 30: 완주
+    // 이동 불가(완주 초과)일 경우
+    if (targetPos === -1) {
+      socket.emit('invalidMove', { message: '완주 칸 수를 초과하여 이동할 수 없습니다.' });
+      return;
     }
 
-    // 업고 있는 말(같은 위치의 내 말) 함께 이동
-    if (currentPos > 0) {
-      myTokens.forEach((pos, idx) => {
-        if (pos === currentPos) {
-          myTokens[idx] = targetPos;
-        }
+    // 업기 판정을 위해 기존 같은 위치에 있던 내 말들 함께 이동
+    if (currentPos > 0 && currentPos < 30) {
+      playerTokens.forEach((pos, idx) => {
+        if (pos === currentPos) playerTokens[idx] = targetPos;
       });
     } else {
-      myTokens[tokenIndex] = targetPos;
+      playerTokens[tokenIndex] = targetPos;
     }
 
-    // 상대방 말 잡기 체크
+    // 상대방 말 잡기 검증
     let caughtOpponent = false;
     if (targetPos > 0 && targetPos < 30) {
-      Object.keys(room.tokens).forEach(pId => {
+      Object.keys(room.tokens).forEach((pId) => {
         if (pId !== socket.id) {
-          room.tokens[pId].forEach((opPos, opIdx) => {
+          room.tokens[pId].forEach((opPos, idx) => {
             if (opPos === targetPos) {
-              room.tokens[pId][opIdx] = 0; // 잡힌 말은 출발지로
+              room.tokens[pId][idx] = 0; // 시작 지점으로 리셋
               caughtOpponent = true;
             }
           });
@@ -176,23 +176,13 @@ io.on('connection', (socket) => {
       });
     }
 
-    // 승리 조건 체크 (말 4개 모두 완주 = 30 이상)
-    const isWinner = myTokens.every(pos => pos >= 30);
-    if (isWinner) {
-      io.to(roomId).emit('gameOver', { winner: currentTurnPlayer });
-      return;
-    }
-
-    // 턴 교체 로직 (잡았거나 윷/모인 경우 한 번 더)
-    let hasExtraTurn = false;
-    if (caughtOpponent || isYutOrMo || room.extraThrow) {
-      hasExtraTurn = true;
-      room.extraThrow = false; // 보너스 기회 소진
-    } else {
+    // 윷/모를 던졌거나 상대 말을 잡았으면 턴 유지
+    const hasExtraTurn = isYutOrMo || caughtOpponent;
+    if (!hasExtraTurn) {
       room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
     }
 
-    io.to(roomId).emit('tokenMoved', {
+    io.to(socket.roomId).emit('tokenMoved', {
       tokens: room.tokens,
       nextTurn: room.players[room.currentTurnIndex],
       caughtOpponent,
@@ -200,37 +190,27 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 5. 연결 해제 처리
   socket.on('disconnect', () => {
-    console.log(`유저 퇴장: ${socket.id}`);
-    
-    Object.keys(rooms).forEach(roomId => {
-      const room = rooms[roomId];
-      const pIndex = room.players.findIndex(p => p.id === socket.id);
-      
-      if (pIndex !== -1) {
-        room.players.splice(pIndex, 1);
-        delete room.tokens[socket.id];
-
-        if (room.players.length === 0) {
-          delete rooms[roomId];
-        } else {
-          if (room.currentTurnIndex >= room.players.length) {
-            room.currentTurnIndex = 0;
-          }
-          io.to(roomId).emit('roomState', {
-            players: room.players,
-            currentTurn: room.players[room.currentTurnIndex],
-            gameStarted: room.gameStarted,
-            tokens: room.tokens
-          });
-        }
+    const room = rooms[socket.roomId];
+    if (room) {
+      room.players = room.players.filter((p) => p.id !== socket.id);
+      delete room.tokens[socket.id];
+      if (room.players.length === 0) {
+        delete rooms[socket.roomId];
+      } else {
+        room.currentTurnIndex %= room.players.length;
+        io.to(socket.roomId).emit('roomState', {
+          players: room.players,
+          currentTurn: room.players[room.currentTurnIndex],
+          gameStarted: room.gameStarted,
+          tokens: room.tokens
+        });
       }
-    });
+    }
   });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 윷놀이 서버가 http://localhost:${PORT} 에서 실행 중입니다.`);
+  console.log(`Server running on port ${PORT}`);
 });
