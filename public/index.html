@@ -7,9 +7,10 @@
   <style>
     body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
     .card { background: white; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    input, button { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
+    input, button, select { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
     button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
     button:disabled { background-color: #ccc; cursor: not-allowed; }
+    select { background-color: #fff; font-weight: bold; cursor: pointer; }
     #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 10px 0; cursor: pointer; }
     #result-box { font-size: 18px; font-weight: bold; margin: 10px 0; color: #333; min-height: 30px; }
     .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
@@ -72,7 +73,17 @@
 
     <div id="controls">
       <button id="start-btn" onclick="startGame()">게임 시작 (2인 이상)</button>
-      <button id="throw-btn" onclick="throwYut()" style="display:none;">윷 던지기!</button>
+      
+      <!-- 🎯 윷 던지는 스킬 선택 메뉴 추가 -->
+      <div id="throw-controls" style="display:none;">
+        <select id="throw-style">
+          <option value="normal">🎯 정석 던지기</option>
+          <option value="high">🚀 높이 던지기 (고공 점프)</option>
+          <option value="spin">🌀 회전 던지기 (초고속 스핀)</option>
+          <option value="gentle">🍃 살살 던지기 (낮고 묵직하게)</option>
+        </select>
+        <button id="throw-btn" onclick="throwYut()">윷 던지기!</button>
+      </div>
     </div>
   </div>
 
@@ -137,12 +148,10 @@
       yutScene = new THREE.Scene();
       yutScene.background = new THREE.Color(0xe0cfb3);
 
-      // 📷 카메라 시점을 탑뷰에 가깝게 위로 대폭 높임 (Y: 16, Z: 3)
       yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
       yutCamera.position.set(0, 16, 3);
       yutCamera.lookAt(0, 0, 0);
 
-      // 💡 직상단 조명 강화로 평평한 면과 둥근 면의 음영차 극대화
       const light1 = new THREE.DirectionalLight(0xffffff, 1.2);
       light1.position.set(0, 20, 5);
       yutScene.add(light1);
@@ -155,8 +164,8 @@
       container.appendChild(yutRenderer.domElement);
 
       const stickGeo = new THREE.CylinderGeometry(0.35, 0.35, 3.2, 16, 1, false, 0, Math.PI);
-      const woodMat = new THREE.MeshStandardMaterial({ color: 0xc48c58, roughness: 0.5 }); // 등(나무 색)
-      const flatMat = new THREE.MeshStandardMaterial({ color: 0xfffae6, roughness: 0.2 }); // 배(밝은 색)
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0xc48c58, roughness: 0.5 });
+      const flatMat = new THREE.MeshStandardMaterial({ color: 0xfffae6, roughness: 0.2 });
 
       const offsets = [-1.3, -0.45, 0.45, 1.3];
       for (let i = 0; i < 4; i++) {
@@ -176,11 +185,19 @@
     }
     init3DYut();
 
-    function animate3DYut(result, callback) {
+    // 🎬 던지기 스타일에 맞춘 3D 애니메이션 연출
+    function animate3DYut(result, style, callback) {
       const modal = document.getElementById('yut-3d-modal');
       const text = document.getElementById('yut-3d-text');
       modal.style.display = 'flex';
-      text.innerText = "윷 던지는 중...";
+
+      const styleNames = {
+        normal: '🎯 정석 던지기!',
+        high: '🚀 높~이 던지기!',
+        spin: '🌀 회전 던지기!',
+        gentle: '🍃 살살 던지기...'
+      };
+      text.innerText = styleNames[style] || '윷 던지는 중...';
 
       const flatCountMap = { '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 0 };
       const flatCount = flatCountMap[result] ?? 0;
@@ -196,17 +213,21 @@
       }
 
       let startTime = performance.now();
-      let duration = 1200;
+      
+      // 던지기 방식별 높이/속도 설정
+      let duration = style === 'high' ? 1600 : (style === 'spin' ? 1000 : 1200);
+      let maxHeight = style === 'high' ? 7.5 : (style === 'gentle' ? 2.0 : 4.5);
+      let rotSpeed = style === 'spin' ? 0.7 : (style === 'gentle' ? 0.15 : 0.35);
 
       function renderFrame(now) {
         let progress = (now - startTime) / duration;
         if (progress > 1) progress = 1;
 
         yutSticks.forEach((stick, idx) => {
-          if (progress < 0.7) {
-            stick.position.y = Math.sin(progress / 0.7 * Math.PI) * 4;
-            stick.rotation.x += 0.3;
-            stick.rotation.z += 0.2;
+          if (progress < 0.75) {
+            stick.position.y = Math.sin((progress / 0.75) * Math.PI) * maxHeight;
+            stick.rotation.x += rotSpeed;
+            stick.rotation.z += rotSpeed * 0.7;
           } else {
             stick.position.y = 0;
             let targetRotZ = isFlatTarget[idx] ? Math.PI / 2 : -Math.PI / 2;
@@ -246,7 +267,11 @@
     }
 
     function startGame() { socket.emit('startGame'); }
-    function throwYut() { socket.emit('throwYut'); }
+    
+    function throwYut() { 
+      const style = document.getElementById('throw-style').value;
+      socket.emit('throwYut', { style }); 
+    }
 
     const yutStepMap = { '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 5 };
 
@@ -261,14 +286,14 @@
       playersData = players;
       tokensData = tokens;
       document.getElementById('start-btn').style.display = 'none';
-      document.getElementById('throw-btn').style.display = 'inline-block';
+      document.getElementById('throw-controls').style.display = 'inline-block';
       document.getElementById('result-box').innerText = '게임을 시작합니다!';
       updateUI(players, currentTurn);
       drawBoard();
     });
 
-    socket.on('yutResult', ({ player, result }) => {
-      animate3DYut(result, () => {
+    socket.on('yutResult', ({ player, result, style }) => {
+      animate3DYut(result, style || 'normal', () => {
         isYutOrMoResult = (result === '윷' || result === '모');
         let extraText = isYutOrMoResult ? ' 🎉 [한 번 더 던지기 획득!]' : '';
         
@@ -280,6 +305,7 @@
         if (player.id === myId) {
           canMoveToken = true;
           document.getElementById('throw-btn').disabled = true;
+          document.getElementById('throw-style').disabled = true;
         }
       });
     });
@@ -480,8 +506,12 @@
 
       if (currentTurn) {
         const throwBtn = document.getElementById('throw-btn');
+        const throwStyle = document.getElementById('throw-style');
         const isMyTurn = currentTurn.id === myId;
+        
         throwBtn.disabled = !isMyTurn || canMoveToken;
+        throwStyle.disabled = !isMyTurn || canMoveToken;
+        
         throwBtn.innerText = isMyTurn ? '내 턴! 윷 던지기' : `${currentTurn.nickname} 턴 대기 중...`;
       }
     }
