@@ -181,13 +181,13 @@
       const container = document.getElementById('yut-3d-container');
       yutScene = new THREE.Scene();
 
-      // Y축 위에서 아래로 내려다보는 시점 설정
+      // 위에서 직각으로 내려다보는 시점 설정
       yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-      yutCamera.position.set(0, 6.5, 3.5);
+      yutCamera.position.set(0, 7.5, 1.0);
       yutCamera.lookAt(0, 0, 0);
 
       const mainLight = new THREE.DirectionalLight(0xffffff, 1.4);
-      mainLight.position.set(0, 10, 5);
+      mainLight.position.set(0, 10, 2);
       yutScene.add(mainLight);
 
       const fillLight = new THREE.DirectionalLight(0xffd1a4, 0.5);
@@ -248,8 +248,8 @@
       else if (style === 'gentle') { jumpHeight = 1.2; rotSpeedMult = 0.6; duration = 1200; }
 
       const stickConfigs = yutSticks.map(() => ({
-        totalRotX: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * (Math.random() > 0.5 ? 1 : -1) * rotSpeedMult,
-        totalRotY: (Math.random() - 0.5) * 0.8 * rotSpeedMult,
+        totalRotZ: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * (Math.random() > 0.5 ? 1 : -1) * rotSpeedMult,
+        totalRotY: (Math.random() - 0.5) * 1.2 * rotSpeedMult,
         offsetY: (Math.random() - 0.5) * 0.2
       }));
 
@@ -269,7 +269,8 @@
             let p = progress / 0.85;
             stick.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
 
-            stick.rotation.x = p * cfg.totalRotX;
+            // 공중 공회전 설정
+            stick.rotation.x = Math.PI / 2 + p * cfg.totalRotZ;
             stick.rotation.y = p * cfg.totalRotY;
             stick.rotation.z = (Math.random() - 0.5) * 0.2;
           } else {
@@ -280,8 +281,8 @@
             stick.rotation.y *= (1 - easeOut);
             stick.rotation.z *= (1 - easeOut);
 
-            // 탑뷰 시점에서 배(평평한 면) = -Math.PI / 2, 등(둥근 면) = Math.PI / 2
-            let targetRotX = isFlatTarget[idx] ? -Math.PI / 2 : Math.PI / 2;
+            // 상단 카메라 기준: 평평한 배(도/개/걸/윷) = Math.PI / 2, 둥근 등(모) = -Math.PI / 2
+            let targetRotX = isFlatTarget[idx] ? (Math.PI / 2) : (-Math.PI / 2);
             stick.rotation.x = THREE.MathUtils.lerp(stick.rotation.x, targetRotX, easeOut);
           }
         });
