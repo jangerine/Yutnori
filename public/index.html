@@ -149,10 +149,10 @@
     const stickPosX = [-1.8, -0.6, 0.6, 1.8];
 
     function createYutMesh() {
-      // D자 형태 윷 단면 생성
       const shape = new THREE.Shape();
-      const radius = 0.35;
+      const radius = 0.38;
       
+      // D자 형태 단면 (배가 정면을 향하도록 설정)
       shape.absarc(0, 0, radius, -Math.PI / 2, Math.PI / 2, false);
       shape.lineTo(0, -radius);
 
@@ -168,21 +168,14 @@
       const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
       geometry.center();
 
-      // 두 개의 재질 (평평한 배, 둥근 등)
       const woodMaterial = new THREE.MeshStandardMaterial({
         color: 0xc48546,
         roughness: 0.4,
         metalness: 0.05
       });
 
-      const group = new THREE.Group();
       const mesh = new THREE.Mesh(geometry, woodMaterial);
-      
-      // 세로로 곧게 서도록 초기 회전 세팅
-      mesh.rotation.x = Math.PI / 2;
-      group.add(mesh);
-
-      return group;
+      return mesh;
     }
 
     function init3DYut() {
@@ -255,8 +248,8 @@
       else if (style === 'gentle') { jumpHeight = 1.4; rotSpeedMult = 0.6; duration = 1200; }
 
       const stickConfigs = yutSticks.map(() => ({
-        totalRotY: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * (Math.random() > 0.5 ? 1 : -1) * rotSpeedMult,
-        totalRotZ: (Math.random() - 0.5) * 0.8 * rotSpeedMult,
+        totalRotZ: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * (Math.random() > 0.5 ? 1 : -1) * rotSpeedMult,
+        totalRotY: (Math.random() - 0.5) * 0.8 * rotSpeedMult,
         offsetY: (Math.random() - 0.5) * 0.2
       }));
 
@@ -276,8 +269,8 @@
             let p = progress / 0.85;
             stick.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
 
-            stick.rotation.y = p * cfg.totalRotY;
             stick.rotation.z = p * cfg.totalRotZ;
+            stick.rotation.y = p * cfg.totalRotY;
             stick.rotation.x = (Math.random() - 0.5) * 0.2;
           } else {
             let settleP = (progress - 0.85) / 0.15;
@@ -285,11 +278,11 @@
 
             stick.position.y = 0;
             stick.rotation.x *= (1 - easeOut);
-            stick.rotation.z *= (1 - easeOut);
+            stick.rotation.y *= (1 - easeOut);
 
-            // 배(평평한 면) = 0, 등(둥근 면) = Math.PI
-            let targetRotY = isFlatTarget[idx] ? 0 : Math.PI;
-            stick.rotation.y = THREE.MathUtils.lerp(stick.rotation.y, targetRotY, easeOut);
+            // 배(평평한 면) = -Math.PI / 2, 등(둥근 면) = Math.PI / 2
+            let targetRotZ = isFlatTarget[idx] ? -Math.PI / 2 : Math.PI / 2;
+            stick.rotation.z = THREE.MathUtils.lerp(stick.rotation.z, targetRotZ, easeOut);
           }
         });
 
