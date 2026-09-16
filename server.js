@@ -33,7 +33,7 @@ io.on('connection', (socket) => {
     const playerNumber = room.players.length + 1;
     const player = { id: socket.id, nickname, number: playerNumber };
     room.players.push(player);
-    room.tokens[socket.id] = [0, 0, 0, 0]; // 0: 대기실, 1~29: 노드, 30: 완주
+    room.tokens[socket.id] = [0, 0, 0, 0]; // 0: 대기실, 1~29: 판 위 노드, 30: 완주
 
     io.to(roomId).emit('roomState', {
       players: room.players,
@@ -76,40 +76,10 @@ io.on('connection', (socket) => {
       rand -= weights[i];
     }
 
-    // 빽도가 나왔을 때 움직일 수 있는 말이 있는지 검사
-    const playerTokens = room.tokens[socket.id];
-    const canMove = playerTokens.some(pos => pos > 0 && pos < 30);
-
-    // 빽도이고 움직일 수 있는 말이 판 위에 없는 경우 (예: 게임 시작 직후 대기실 상태)
-    if (result === '빽도' && !canMove) {
-      // 다음 플레이어에게 턴 넘기기
-      room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
-
-      io.to(socket.roomId).emit('yutResult', {
-        player: currentPlayer,
-        result,
-        style,
-        noValidMove: true
-      });
-
-      setTimeout(() => {
-        io.to(socket.roomId).emit('tokenMoved', {
-          tokens: room.tokens,
-          nextTurn: room.players[room.currentTurnIndex],
-          caughtOpponent: false,
-          hasExtraTurn: false,
-          skipReason: '빽도가 나왔으나 판 위에 움직일 말이 없어 턴이 넘어갑니다.'
-        });
-      }, 1500);
-
-      return;
-    }
-
     io.to(socket.roomId).emit('yutResult', {
       player: currentPlayer,
       result,
-      style,
-      noValidMove: false
+      style
     });
   });
 
@@ -121,7 +91,7 @@ io.on('connection', (socket) => {
     const playerTokens = room.tokens[socket.id];
     const currentPos = playerTokens[tokenIndex];
 
-    // 업은 말 동시 이동 처리
+    // 같은 자리에 있던 본인 말들(업은 말)도 같이 이동
     if (currentPos > 0 && currentPos < 30) {
       playerTokens.forEach((pos, idx) => {
         if (pos === currentPos) playerTokens[idx] = targetPos;
