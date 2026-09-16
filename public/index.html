@@ -143,14 +143,12 @@
 
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
 
-    // --- 3D 윷 시스템 ---
     let yutScene, yutCamera, yutRenderer;
     let yutMeshes = [];
     const stickPosX = [-1.8, -0.6, 0.6, 1.8];
 
     function createYutMesh(isBackDo = false) {
       const group = new THREE.Group();
-
       const shape = new THREE.Shape();
       const r = 0.48;
       
@@ -159,23 +157,13 @@
       shape.absarc(0, 0, r, 0, Math.PI, false);
 
       const extrudeSettings = {
-        depth: 2.8,
-        bevelEnabled: true,
-        bevelSegments: 4,
-        steps: 1,
-        bevelSize: 0.05,
-        bevelThickness: 0.05
+        depth: 2.8, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.05, bevelThickness: 0.05
       };
 
       const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
       geometry.center();
 
-      const woodMaterial = new THREE.MeshStandardMaterial({
-        color: 0x8B4513,
-        roughness: 0.5,
-        metalness: 0.05
-      });
-
+      const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.5, metalness: 0.05 });
       const yutBody = new THREE.Mesh(geometry, woodMaterial);
       group.add(yutBody);
 
@@ -183,17 +171,13 @@
         const markMat = new THREE.MeshBasicMaterial({ color: 0xcc0000 });
         const markGroup = new THREE.Group();
 
-        const bar1Geo = new THREE.BoxGeometry(0.12, 0.02, 0.6);
-        const bar1 = new THREE.Mesh(bar1Geo, markMat);
+        const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.6), markMat);
         bar1.rotation.y = Math.PI / 4;
 
-        const bar2Geo = new THREE.BoxGeometry(0.12, 0.02, 0.6);
-        const bar2 = new THREE.Mesh(bar2Geo, markMat);
+        const bar2 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.6), markMat);
         bar2.rotation.y = -Math.PI / 4;
 
-        markGroup.add(bar1);
-        markGroup.add(bar2);
-        
+        markGroup.add(bar1); markGroup.add(bar2);
         markGroup.position.set(0, 0.01, 0);
         group.add(markGroup);
       }
@@ -239,12 +223,7 @@
 
       yutRenderer.setSize(340, 340);
 
-      const styleNames = {
-        normal: '🎯 정석 던지기!',
-        high: '🚀 높~이 던지기!',
-        spin: '🌀 회전 던지기!',
-        gentle: '🍃 살살 던지기...'
-      };
+      const styleNames = { normal: '🎯 정석 던지기!', high: '🚀 높~이 던지기!', spin: '🌀 회전 던지기!', gentle: '🍃 살살 던지기...' };
       text.innerText = styleNames[style] || '윷 던지는 중...';
 
       const isFlatTarget = [false, false, false, false];
@@ -286,7 +265,6 @@
       function renderFrame(now) {
         let elapsed = now - startTime;
         let progress = elapsed / duration;
-
         if (progress > 1) progress = 1;
 
         yutMeshes.forEach((mesh, idx) => {
@@ -296,14 +274,12 @@
           if (progress < 0.85) {
             let p = progress / 0.85;
             mesh.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
-
             mesh.rotation.x = p * cfg.totalRotX;
             mesh.rotation.z = p * cfg.totalRotZ;
             mesh.rotation.y = 0;
           } else {
             let settleP = (progress - 0.85) / 0.15;
             let easeOut = 1 - Math.pow(1 - settleP, 3);
-
             mesh.position.y = 0;
             mesh.rotation.y = 0;
             mesh.rotation.z = 0;
@@ -408,7 +384,15 @@
       drawBoard();
     });
 
-    // --- [대각선 이동 완전 수정] ---
+    socket.on('invalidMove', ({ message }) => {
+      document.getElementById('result-box').innerText = `⚠️ ${message}`;
+      selectedTokenIndex = null;
+      targetBoardPos = null;
+      canMoveToken = true;
+      drawBoard();
+    });
+
+    // --- [완주 정확한 수 계산 및 경로 판단 함수] ---
     function calculateTargetPos(currentPos, steps) {
       if (steps === -1) {
         if (currentPos === 0) return 0;
@@ -423,25 +407,39 @@
 
       if (currentPos === 5) {
         const path5 = [20, 21, 22, 23, 24, 19, 14, 13, 12, 11, 10];
-        return steps <= path5.length ? path5[steps - 1] : 30;
+        if (steps > path5.length) return -1;
+        return steps === path5.length ? 30 : path5[steps - 1];
       }
 
       if (currentPos === 10) {
         const path10 = [25, 26, 22, 23, 24, 19, 14, 13, 12, 11];
-        return steps <= path10.length ? path10[steps - 1] : 30;
+        if (steps > path10.length) return -1;
+        return steps === path10.length ? 30 : path10[steps - 1];
       }
 
       let pos = currentPos;
+      let remainingSteps = steps;
+
       for (let i = 0; i < steps; i++) {
-        if (pos === 22) { pos = 23; continue; }
-        if (pos === 24) { pos = 19; continue; }
-        if (pos === 19) { pos = 14; continue; }
-        if (pos === 28) { pos = 19; continue; }
+        if (pos === 22) { pos = 23; remainingSteps--; continue; }
+        if (pos === 23) { pos = 24; remainingSteps--; continue; }
+        if (pos === 24) { pos = 19; remainingSteps--; continue; }
+        if (pos === 19) { pos = 14; remainingSteps--; continue; }
+        if (pos === 28) { pos = 19; remainingSteps--; continue; }
+
+        if (pos === 14) {
+          if (remainingSteps === 1) return 30;
+          if (remainingSteps > 1) return -1;
+        }
+
         pos++;
+        remainingSteps--;
       }
 
-      if (pos > 28 && pos < 30) return 30;
-      return pos >= 30 ? 30 : pos;
+      if (pos === 30) return 30;
+      if (pos > 30) return -1;
+
+      return pos;
     }
 
     canvas.addEventListener('click', (e) => {
@@ -456,20 +454,32 @@
       if (selectedTokenIndex === null) {
         for (let tIdx = 0; tIdx < myTokens.length; tIdx++) {
           const pos = myTokens[tIdx];
+          if (pos === 30) continue; // 완주한 말 제외
+
           let tokenPos = (pos === 0) ? { x: 50 + tIdx * 35, y: 395 } : (pos < boardCoords.length ? boardCoords[pos] : null);
 
           if (tokenPos && Math.hypot(mouseX - tokenPos.x, mouseY - tokenPos.y) <= 18) {
+            const calculatedPos = calculateTargetPos(pos, currentLastResultSteps);
+            
+            if (calculatedPos === -1) {
+              document.getElementById('result-box').innerText = '⚠️ 남은 칸 수보다 크거나 들어갈 수 없는 말입니다. 다른 말을 선택하세요!';
+              return;
+            }
+
             selectedTokenIndex = tIdx;
-            targetBoardPos = calculateTargetPos(pos, currentLastResultSteps);
+            targetBoardPos = calculatedPos;
             document.getElementById('result-box').innerText = '도착할 칸(초록색 점)을 클릭하세요!';
             drawBoard();
             return;
           }
         }
       } else {
-        if (targetBoardPos !== null && targetBoardPos < boardCoords.length) {
-          const targetCoord = boardCoords[targetBoardPos];
-          if (Math.hypot(mouseX - targetCoord.x, mouseY - targetCoord.y) <= 20) {
+        if (targetBoardPos !== null) {
+          let targetCoord = (targetBoardPos === 30) 
+            ? { x: S + L, y: S + L } 
+            : boardCoords[targetBoardPos];
+
+          if (targetCoord && Math.hypot(mouseX - targetCoord.x, mouseY - targetCoord.y) <= 20) {
             socket.emit('moveToken', {
               tokenIndex: selectedTokenIndex,
               steps: currentLastResultSteps,
@@ -514,11 +524,11 @@
       }
 
       ctx.beginPath();
-      ctx.arc(S + L, S + L, 12, 0, Math.PI * 2);
-      ctx.fillStyle = '#e67e22';
+      ctx.arc(S + L, S + L, (targetBoardPos === 30) ? 15 : 12, 0, Math.PI * 2);
+      ctx.fillStyle = (targetBoardPos === 30) ? '#2ecc71' : '#e67e22';
       ctx.fill();
-      ctx.strokeStyle = '#5d4037';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = (targetBoardPos === 30) ? '#27ae60' : '#5d4037';
+      ctx.lineWidth = (targetBoardPos === 30) ? 3.5 : 2;
       ctx.stroke();
 
       ctx.fillStyle = '#eaeaea';
