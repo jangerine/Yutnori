@@ -21,26 +21,29 @@
       display: none;
       position: fixed;
       top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.75);
       z-index: 999;
       justify-content: center;
       align-items: center;
       flex-direction: column;
+      backdrop-filter: blur(4px);
     }
     #yut-3d-container {
-      width: 320px;
-      height: 320px;
-      background: #e0cfb3;
-      border-radius: 16px;
-      box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+      width: 340px;
+      height: 340px;
+      background: radial-gradient(circle, #f3e5ab 0%, #c8b282 100%);
+      border-radius: 20px;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.5), inset 0 0 15px rgba(0,0,0,0.2);
       overflow: hidden;
+      border: 4px solid #8b5a2b;
     }
     #yut-3d-text {
       color: #fff;
       font-size: 28px;
       font-weight: bold;
-      margin-top: 15px;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+      margin-top: 20px;
+      text-shadow: 0 3px 6px rgba(0,0,0,0.8);
+      letter-spacing: 1px;
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -140,51 +143,83 @@
 
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
 
-    // --- 3D 윷놀이 시스템 개선 ---
+    // --- 고품질 3D 윷 비주얼 시스템 ---
     let yutScene, yutCamera, yutRenderer;
     let yutSticks = [];
-    const stickPosX = [-2.2, -0.7, 0.7, 2.2]; // 4개 윷의 X 간격 확 벌림
+    const stickPosX = [-2.1, -0.7, 0.7, 2.1];
+
+    function createYutMesh() {
+      const group = new THREE.Group();
+
+      // 재질 설정 (은은한 나뭇결 광택 및 따뜻한 우드톤)
+      const woodMaterial = new THREE.MeshStandardMaterial({
+        color: 0x9e693b,
+        roughness: 0.4,
+        metalness: 0.1
+      });
+      const flatMaterial = new THREE.MeshStandardMaterial({
+        color: 0xfffaeb,
+        roughness: 0.3
+      });
+
+      // 1. 둥근 등 부분 (반원기둥)
+      const roundGeo = new THREE.CylinderGeometry(0.38, 0.38, 3.2, 24, 1, false, 0, Math.PI);
+      const roundMesh = new THREE.Mesh(roundGeo, woodMaterial);
+      roundMesh.rotation.y = -Math.PI / 2;
+      group.add(roundMesh);
+
+      // 2. 평평한 배 부분 (사각 마감)
+      const flatGeo = new THREE.PlaneGeometry(0.76, 3.2);
+      const flatMesh = new THREE.Mesh(flatGeo, flatMaterial);
+      flatMesh.rotation.y = Math.PI / 2;
+      group.add(flatMesh);
+
+      // 3. 위/아래 양 끝을 매끄럽게 다듬는 캡
+      const capGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.05, 24, 1, false, 0, Math.PI);
+      
+      const topCap = new THREE.Mesh(capGeo, woodMaterial);
+      topCap.position.y = 1.6;
+      topCap.rotation.x = Math.PI / 2;
+      group.add(topCap);
+
+      const bottomCap = new THREE.Mesh(capGeo, woodMaterial);
+      bottomCap.position.y = -1.6;
+      bottomCap.rotation.x = -Math.PI / 2;
+      group.add(bottomCap);
+
+      return group;
+    }
 
     function init3DYut() {
       const container = document.getElementById('yut-3d-container');
       yutScene = new THREE.Scene();
-      yutScene.background = new THREE.Color(0xe0cfb3);
 
-      yutCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-      yutCamera.position.set(0, 0, 7); // 정면 탑뷰
+      yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+      yutCamera.position.set(0, 0, 7.5);
       yutCamera.lookAt(0, 0, 0);
 
-      const light1 = new THREE.DirectionalLight(0xffffff, 1.2);
-      light1.position.set(0, 5, 10);
-      yutScene.add(light1);
-      
+      // 풍성한 입체감을 위한 입체 조명 조합
+      const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      mainLight.position.set(3, 8, 10);
+      yutScene.add(mainLight);
+
+      const fillLight = new THREE.DirectionalLight(0xffd1a4, 0.5);
+      fillLight.position.set(-5, -3, 5);
+      yutScene.add(fillLight);
+
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       yutScene.add(ambientLight);
 
-      yutRenderer = new THREE.WebGLRenderer({ antialias: true });
-      yutRenderer.setSize(320, 320);
+      yutRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      yutRenderer.setSize(340, 340);
+      yutRenderer.setPixelRatio(window.devicePixelRatio);
       container.appendChild(yutRenderer.domElement);
 
-      // 박스 형태로 단순화하여 확실한 등/배 구분 및 간격 유지
-      const geometry = new THREE.BoxGeometry(0.8, 3.0, 0.3);
-      
-      // 재질: [우, 좌, 상, 하, 앞(배-평평), 뒤(등-둥근/나무)]
-      const materials = [
-        new THREE.MeshStandardMaterial({ color: 0xc48c58 }), // 옆
-        new THREE.MeshStandardMaterial({ color: 0xc48c58 }), // 옆
-        new THREE.MeshStandardMaterial({ color: 0xc48c58 }), // 위
-        new THREE.MeshStandardMaterial({ color: 0xc48c58 }), // 아래
-        new THREE.MeshStandardMaterial({ color: 0xfffae6 }), // 배 (흰색/평평)
-        new THREE.MeshStandardMaterial({ color: 0x8b5a2b })  // 등 (진한 나무색)
-      ];
-
       for (let i = 0; i < 4; i++) {
-        const mesh = new THREE.Mesh(geometry, materials);
-        mesh.position.x = stickPosX[i];
-        mesh.position.y = 0;
-        mesh.position.z = 0;
-        yutScene.add(mesh);
-        yutSticks.push(mesh);
+        const yut = createYutMesh();
+        yut.position.x = stickPosX[i];
+        yutScene.add(yut);
+        yutSticks.push(yut);
       }
     }
     init3DYut();
@@ -194,8 +229,7 @@
       const text = document.getElementById('yut-3d-text');
       modal.style.display = 'flex';
 
-      // 모달 표시 후 3D 뷰포트 재계산
-      yutRenderer.setSize(320, 320);
+      yutRenderer.setSize(340, 340);
 
       const styleNames = {
         normal: '🎯 정석 던지기!',
@@ -208,7 +242,6 @@
       const flatCountMap = { '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 0 };
       const flatCount = flatCountMap[result] ?? 0;
 
-      // 배(평평한 면)가 나올 윷 개수만큼 랜덤 지정
       const isFlatTarget = [false, false, false, false];
       let assigned = 0;
       while (assigned < flatCount) {
@@ -222,10 +255,9 @@
       let startTime = performance.now();
       let duration = 1200;
 
-      // 윷가락별 독립적 회전 속도 부여
       const speeds = yutSticks.map(() => ({
-        x: (Math.random() * 0.3 + 0.2) * (Math.random() > 0.5 ? 1 : -1),
-        y: (Math.random() * 0.3 + 0.2) * (Math.random() > 0.5 ? 1 : -1)
+        x: (Math.random() * 0.35 + 0.25) * (Math.random() > 0.5 ? 1 : -1),
+        z: (Math.random() * 0.35 + 0.25) * (Math.random() > 0.5 ? 1 : -1)
       }));
 
       function renderFrame(now) {
@@ -235,20 +267,18 @@
         if (progress > 1) progress = 1;
 
         yutSticks.forEach((stick, idx) => {
-          // X 좌표 고정 (4개가 절대 겹치지 않음!)
           stick.position.x = stickPosX[idx];
 
-          if (progress < 0.8) {
-            // 공중 회전 동작
-            let p8 = progress / 0.8;
-            stick.position.y = Math.sin(p8 * Math.PI) * 2.0;
+          if (progress < 0.82) {
+            let p = progress / 0.82;
+            stick.position.y = Math.sin(p * Math.PI) * 2.2;
             stick.rotation.x += speeds[idx].x;
-            stick.rotation.y += speeds[idx].y;
+            stick.rotation.z += speeds[idx].z;
           } else {
-            // 바닥 착지 동작 및 결과 고정
             stick.position.y = 0;
             stick.rotation.x = 0;
-            // 배(앞면): Y rotation 0, 등(뒷면): Y rotation PI
+            stick.rotation.z = 0;
+            // 평평한 면(배)은 정면(0 rad), 둥근 면(등)은 뒤쪽(PI rad)
             let targetRotY = isFlatTarget[idx] ? 0 : Math.PI;
             stick.rotation.y = targetRotY;
           }
