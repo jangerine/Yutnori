@@ -1,154 +1,430 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 윷놀이 (드래그 앤 드롭 이동)</title>
+  <style>
+    body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; user-select: none; }
+    .card { background: white; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    input, button, select { padding: 10px 15px; font-size: 16px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background-color: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    #board-canvas { background: #fdf8ec; border: 3px solid #8b5a2b; border-radius: 12px; margin: 10px 0; cursor: grab; }
+    #board-canvas:active { cursor: grabbing; }
+    #result-box { font-size: 18px; font-weight: bold; margin: 10px 0; color: #333; min-height: 30px; }
+    .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
+    .active-turn { font-weight: bold; color: #007bff; }
+    #game-area { display: none; }
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
-
-app.use(express.static('public'));
-
-const rooms = {};
-
-io.on('connection', (socket) => {
-  socket.on('joinRoom', ({ roomId, nickname }) => {
-    socket.roomId = roomId;
-    socket.join(roomId);
-
-    if (!rooms[roomId]) {
-      rooms[roomId] = {
-        players: [],
-        currentTurnIndex: 0,
-        gameStarted: false,
-        tokens: {}
-      };
+    #yut-3d-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 999;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      backdrop-filter: blur(4px);
     }
-
-    const room = rooms[roomId];
-    if (room.players.length >= 4) {
-      socket.emit('errorMsg', '방이 가득 찼습니다.');
-      return;
+    #yut-3d-container {
+      width: 340px; height: 340px;
+      background: radial-gradient(circle, #f3e5ab 0%, #c8b282 100%);
+      border-radius: 20px;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.5);
+      overflow: hidden;
+      border: 4px solid #8b5a2b;
     }
+    #yut-3d-text { color: #fff; font-size: 28px; font-weight: bold; margin-top: 20px; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
 
-    const playerNumber = room.players.length + 1;
-    const player = { id: socket.id, nickname, number: playerNumber };
-    room.players.push(player);
-    room.tokens[socket.id] = [0, 0, 0, 0]; // 0: 대기실, 1~29: 판 위 노드, 30: 완주
+  <div id="yut-3d-modal">
+    <div id="yut-3d-container"></div>
+    <div id="yut-3d-text">윷 던지는 중...</div>
+  </div>
 
-    io.to(roomId).emit('roomState', {
-      players: room.players,
-      currentTurn: room.players[room.currentTurnIndex],
-      gameStarted: room.gameStarted,
-      tokens: room.tokens
-    });
-  });
+  <div class="card" id="login-area">
+    <h2>🎲 자유 드래그 윷놀이</h2>
+    <input type="text" id="nickname" placeholder="닉네임 입력" maxlength="8"><br>
+    <input type="text" id="room-id" placeholder="방 코드 입력"><br>
+    <button onclick="joinRoom()">입장하기</button>
+  </div>
 
-  socket.on('startGame', () => {
-    const room = rooms[socket.roomId];
-    if (!room || room.players.length < 2) return;
-    room.gameStarted = true;
+  <div class="card" id="game-area">
+    <h3 id="room-title">방 코드: </h3>
+    
+    <div class="player-list">
+      <div>참여 인원 (<span id="player-count">0</span>/4)</div>
+      <div id="players"></div>
+    </div>
 
-    io.to(socket.roomId).emit('gameStarted', {
-      players: room.players,
-      currentTurn: room.players[room.currentTurnIndex],
-      tokens: room.tokens
-    });
-  });
+    <canvas id="board-canvas" width="360" height="430"></canvas>
 
-  socket.on('throwYut', ({ style }) => {
-    const room = rooms[socket.roomId];
-    if (!room || !room.gameStarted) return;
+    <div id="result-box">대기 중...</div>
 
-    const currentPlayer = room.players[room.currentTurnIndex];
-    if (currentPlayer.id !== socket.id) return;
+    <div id="controls">
+      <button id="start-btn" onclick="startGame()">게임 시작 (2인 이상)</button>
+      
+      <div id="throw-controls" style="display:none;">
+        <select id="throw-style">
+          <option value="normal">🎯 정석 던지기</option>
+          <option value="high">🚀 높이 던지기</option>
+          <option value="spin">🌀 회전 던지기</option>
+          <option value="gentle">🍃 살살 던지기</option>
+        </select>
+        <button id="throw-btn" onclick="throwYut()">윷 던지기!</button>
+      </div>
+    </div>
+  </div>
 
-    const yutResults = ['빽도', '도', '개', '걸', '윷', '모'];
-    const weights = [1, 3, 6, 4, 1, 1];
-    let totalWeight = weights.reduce((a, b) => a + b, 0);
-    let rand = Math.floor(Math.random() * totalWeight);
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let myId = null;
+    let isYutOrMoResult = false;
+    let canMoveToken = false;
+    let playersData = [];
+    let tokensData = {};
 
-    let result = '도';
-    for (let i = 0; i < yutResults.length; i++) {
-      if (rand < weights[i]) {
-        result = yutResults[i];
-        break;
+    // 드래그 상태 정보
+    let isDragging = false;
+    let draggedTokenIndex = null;
+    let dragPos = { x: 0, y: 0 };
+
+    const canvas = document.getElementById('board-canvas');
+    const ctx = canvas.getContext('2d');
+
+    const S = 30;
+    const L = 300;
+    const step = L / 5;
+    const center = S + L / 2;
+
+    const boardCoords = [
+      { x: 0, y: 0 },
+      { x: S + L, y: S + L - step * 1 },
+      { x: S + L, y: S + L - step * 2 },
+      { x: S + L, y: S + L - step * 3 },
+      { x: S + L, y: S + L - step * 4 },
+      { x: S + L,          y: S },
+      { x: S + L - step * 1, y: S },
+      { x: S + L - step * 2, y: S },
+      { x: S + L - step * 3, y: S },
+      { x: S + L - step * 4, y: S },
+      { x: S, y: S },
+      { x: S, y: S + step * 1 },
+      { x: S, y: S + step * 2 },
+      { x: S, y: S + step * 3 },
+      { x: S, y: S + step * 4 },
+      { x: S,            y: S + L },
+      { x: S + step * 1, y: S + L },
+      { x: S + step * 2, y: S + L },
+      { x: S + step * 3, y: S + L },
+      { x: S + step * 4, y: S + L },
+      { x: S + L - step * 1,   y: S + step * 1 },
+      { x: S + L - step * 1.8, y: S + step * 1.8 },
+      { x: center, y: center },
+      { x: S + step * 1.8,     y: S + L - step * 1.8 },
+      { x: S + step * 1,       y: S + L - step * 1 },
+      { x: S + step * 1,       y: S + step * 1 },
+      { x: S + step * 1.8,     y: S + step * 1.8 },
+      { x: S + L - step * 1.8, y: S + L - step * 1.8 },
+      { x: S + L - step * 1,   y: S + L - step * 1 },
+      { x: S + L, y: S + L } // 30: 완주 지점
+    ];
+
+    const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
+
+    // --- [3D 윷 연출 영역] ---
+    let yutScene, yutCamera, yutRenderer;
+    let yutMeshes = [];
+    const stickPosX = [-1.8, -0.6, 0.6, 1.8];
+
+    function createYutMesh(isBackDo = false) {
+      const group = new THREE.Group();
+      const shape = new THREE.Shape();
+      const r = 0.48;
+      shape.moveTo(-r, 0); shape.lineTo(r, 0); shape.absarc(0, 0, r, 0, Math.PI, false);
+      const extrudeSettings = { depth: 2.8, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.05, bevelThickness: 0.05 };
+      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      geometry.center();
+      const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.5 });
+      group.add(new THREE.Mesh(geometry, woodMaterial));
+
+      if (isBackDo) {
+        const markMat = new THREE.MeshBasicMaterial({ color: 0xcc0000 });
+        const markGroup = new THREE.Group();
+        const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.6), markMat); bar1.rotation.y = Math.PI / 4;
+        const bar2 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.6), markMat); bar2.rotation.y = -Math.PI / 4;
+        markGroup.add(bar1); markGroup.add(bar2);
+        markGroup.position.set(0, 0.01, 0);
+        group.add(markGroup);
       }
-      rand -= weights[i];
+      return group;
     }
 
-    io.to(socket.roomId).emit('yutResult', {
-      player: currentPlayer,
-      result,
-      style
+    function init3DYut() {
+      const container = document.getElementById('yut-3d-container');
+      yutScene = new THREE.Scene();
+      yutCamera = new THREE.OrthographicCamera(-3.2, 3.2, 3.2, -3.2, 0.1, 100);
+      yutCamera.position.set(0, 10, 0);
+      yutCamera.lookAt(0, 0, 0);
+
+      yutScene.add(new THREE.DirectionalLight(0xffffff, 1.4));
+      yutScene.add(new THREE.AmbientLight(0xffffff, 0.7));
+
+      yutRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      yutRenderer.setSize(340, 340);
+      container.appendChild(yutRenderer.domElement);
+
+      for (let i = 0; i < 4; i++) {
+        const mesh = createYutMesh(i === 0);
+        mesh.position.x = stickPosX[i];
+        yutScene.add(mesh);
+        yutMeshes.push(mesh);
+      }
+    }
+    init3DYut();
+
+    function animate3DYut(result, style, callback) {
+      const modal = document.getElementById('yut-3d-modal');
+      document.getElementById('yut-3d-text').innerText = `[ ${result} ] !`;
+      modal.style.display = 'flex';
+
+      setTimeout(() => {
+        modal.style.display = 'none';
+        if (callback) callback();
+      }, 1000);
+    }
+
+    socket.on('connect', () => { myId = socket.id; });
+
+    function joinRoom() {
+      const nickname = document.getElementById('nickname').value.trim();
+      const roomId = document.getElementById('room-id').value.trim();
+      if (!roomId) return alert('방 코드를 입력하세요.');
+
+      socket.emit('joinRoom', { roomId, nickname });
+      document.getElementById('login-area').style.display = 'none';
+      document.getElementById('game-area').style.display = 'block';
+      document.getElementById('room-title').innerText = `방 코드: ${roomId}`;
+      drawBoard();
+    }
+
+    function startGame() { socket.emit('startGame'); }
+    function throwYut() { socket.emit('throwYut', { style: document.getElementById('throw-style').value }); }
+
+    socket.on('roomState', ({ players, currentTurn, gameStarted, tokens }) => {
+      playersData = players; tokensData = tokens;
+      updateUI(players, currentTurn); drawBoard();
     });
-  });
 
-  // 플레이어가 드래그해서 놓은 위치로 즉시 이동
-  socket.on('moveTokenDirect', ({ tokenIndex, targetPos, isYutOrMo }) => {
-    const room = rooms[socket.roomId];
-    if (!room) return;
+    socket.on('gameStarted', ({ players, currentTurn, tokens }) => {
+      playersData = players; tokensData = tokens;
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('throw-controls').style.display = 'inline-block';
+      document.getElementById('result-box').innerText = '게임을 시작합니다!';
+      updateUI(players, currentTurn); drawBoard();
+    });
 
-    const playerTokens = room.tokens[socket.id];
-    const currentPos = playerTokens[tokenIndex];
+    socket.on('yutResult', ({ player, result, style }) => {
+      animate3DYut(result, style || 'normal', () => {
+        isYutOrMoResult = (result === '윷' || result === '모');
+        document.getElementById('result-box').innerText = `${player.nickname}: [ ${result} ]! 말을 드래그해서 원하는 위치로 옮기세요.`;
 
-    // 같은 자리에 있던 본인 말들(업은 말)도 같이 이동
-    if (currentPos > 0 && currentPos < 30) {
-      playerTokens.forEach((pos, idx) => {
-        if (pos === currentPos) playerTokens[idx] = targetPos;
-      });
-    } else {
-      playerTokens[tokenIndex] = targetPos;
-    }
-
-    // 상대방 말 잡기 판정
-    let caughtOpponent = false;
-    if (targetPos > 0 && targetPos < 30) {
-      Object.keys(room.tokens).forEach((pId) => {
-        if (pId !== socket.id) {
-          room.tokens[pId].forEach((opPos, idx) => {
-            if (opPos === targetPos) {
-              room.tokens[pId][idx] = 0; // 대기실로 리셋
-              caughtOpponent = true;
-            }
-          });
+        if (player.id === myId) {
+          canMoveToken = true;
+          document.getElementById('throw-btn').disabled = true;
         }
       });
-    }
-
-    const hasExtraTurn = isYutOrMo || caughtOpponent;
-    if (!hasExtraTurn) {
-      room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
-    }
-
-    io.to(socket.roomId).emit('tokenMoved', {
-      tokens: room.tokens,
-      nextTurn: room.players[room.currentTurnIndex],
-      caughtOpponent,
-      hasExtraTurn
     });
-  });
 
-  socket.on('disconnect', () => {
-    const room = rooms[socket.roomId];
-    if (room) {
-      room.players = room.players.filter((p) => p.id !== socket.id);
-      delete room.tokens[socket.id];
-      if (room.players.length === 0) {
-        delete rooms[socket.roomId];
-      } else {
-        room.currentTurnIndex %= room.players.length;
-        io.to(socket.roomId).emit('roomState', {
-          players: room.players,
-          currentTurn: room.players[room.currentTurnIndex],
-          gameStarted: room.gameStarted,
-          tokens: room.tokens
+    socket.on('tokenMoved', ({ tokens, nextTurn, caughtOpponent, hasExtraTurn }) => {
+      tokensData = tokens;
+      canMoveToken = false;
+      isDragging = false;
+      draggedTokenIndex = null;
+
+      let msg = caughtOpponent ? '💥 상대 말을 잡았습니다! [한 번 더!]' : (hasExtraTurn ? '✨ 한 번 더 던질 기회!' : `${nextTurn.nickname} 님의 턴입니다.`);
+      document.getElementById('result-box').innerText = msg;
+
+      updateUI(playersData, nextTurn);
+      drawBoard();
+    });
+
+    // --- [드래그 앤 드롭 이벤트 핸들러] ---
+    canvas.addEventListener('mousedown', (e) => {
+      if (!canMoveToken) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const myTokens = tokensData[myId] || [0, 0, 0, 0];
+
+      for (let tIdx = 0; tIdx < myTokens.length; tIdx++) {
+        const pos = myTokens[tIdx];
+        let tokenPos = (pos === 0) ? { x: 50 + tIdx * 35, y: 395 } : (boardCoords[pos] || null);
+
+        if (tokenPos && Math.hypot(mouseX - tokenPos.x, mouseY - tokenPos.y) <= 20) {
+          isDragging = true;
+          draggedTokenIndex = tIdx;
+          dragPos = { x: mouseX, y: mouseY };
+          drawBoard();
+          break;
+        }
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const rect = canvas.getBoundingClientRect();
+      dragPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      drawBoard();
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+      if (!isDragging) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      // 가장 가까운 노드 위치 탐색
+      let closestPos = -1;
+      let minDistance = 35; // 감지 반경
+
+      // 1~30번 판 위 노드 검사
+      for (let i = 1; i <= 30; i++) {
+        const coord = boardCoords[i];
+        if (coord) {
+          const dist = Math.hypot(mouseX - coord.x, mouseY - coord.y);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestPos = i;
+          }
+        }
+      }
+
+      // 대기실 영역 검사 (y > 360)
+      if (mouseY > 360) closestPos = 0;
+
+      if (closestPos !== -1) {
+        socket.emit('moveTokenDirect', {
+          tokenIndex: draggedTokenIndex,
+          targetPos: closestPos,
+          isYutOrMoResult: isYutOrMoResult
         });
+      } else {
+        // 유효한 드롭 위치가 아니면 드래그 취소
+        isDragging = false;
+        draggedTokenIndex = null;
+        drawBoard();
+      }
+    });
+
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = '#8b5a2b';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.strokeRect(S, S, L, L);
+      ctx.moveTo(S, S); ctx.lineTo(S + L, S + L);
+      ctx.moveTo(S + L, S); ctx.lineTo(S, S + L);
+      ctx.stroke();
+
+      const bigPoints = [5, 10, 15, 22];
+
+      // 판 위 노드 그리기
+      for (let i = 1; i <= 30; i++) {
+        const pt = boardCoords[i];
+        if (!pt) continue;
+        const isBig = bigPoints.includes(i);
+
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, isBig ? 12 : 8, 0, Math.PI * 2);
+        ctx.fillStyle = (i === 30) ? '#e67e22' : (isBig ? '#e67e22' : '#f39c12');
+        ctx.fill();
+        ctx.strokeStyle = '#5d4037';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // 대기실 배경
+      ctx.fillStyle = '#eaeaea';
+      ctx.fillRect(10, 360, 340, 55);
+      ctx.fillStyle = '#555';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('대기실 (말을 판 위로 드래그하세요)', 20, 375);
+
+      // 말 그리기
+      playersData.forEach((player) => {
+        const pTokens = tokensData[player.id] || [0, 0, 0, 0];
+        const color = playerColors[player.number] || '#e74c3c';
+
+        pTokens.forEach((pos, tIdx) => {
+          if (isDragging && player.id === myId && tIdx === draggedTokenIndex) return; // 드래그 중인 말은 따로 처리
+
+          let x = 0, y = 0;
+          if (pos === 0) {
+            if (player.id === myId) { x = 50 + tIdx * 35; y = 395; } 
+            else return;
+          } else if (boardCoords[pos]) {
+            x = boardCoords[pos].x;
+            y = boardCoords[pos].y;
+          } else return;
+
+          ctx.beginPath();
+          ctx.arc(x, y, 10, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#fff';
+          ctx.stroke();
+        });
+      });
+
+      // 드래그 중인 말 따로 그리기 (마우스 커서 위치)
+      if (isDragging && draggedTokenIndex !== null) {
+        const myPlayer = playersData.find(p => p.id === myId);
+        const color = myPlayer ? playerColors[myPlayer.number] : '#e74c3c';
+
+        ctx.beginPath();
+        ctx.arc(dragPos.x, dragPos.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#007bff';
+        ctx.stroke();
       }
     }
-  });
-});
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+    function updateUI(players, currentTurn) {
+      document.getElementById('player-count').innerText = players.length;
+      const listDiv = document.getElementById('players');
+      listDiv.innerHTML = '';
+
+      players.forEach((p) => {
+        const isMe = p.id === myId ? ' (나)' : '';
+        const color = playerColors[p.number] || '#333';
+        const item = document.createElement('div');
+        if (currentTurn && p.id === currentTurn.id) item.className = 'active-turn';
+        
+        item.innerHTML = `<span style="color:${color}; font-weight:bold;">●</span> ${p.number}번. ${p.nickname}${isMe}`;
+        listDiv.appendChild(item);
+      });
+
+      if (currentTurn) {
+        const throwBtn = document.getElementById('throw-btn');
+        const isMyTurn = currentTurn.id === myId;
+        throwBtn.disabled = !isMyTurn || canMoveToken;
+        throwBtn.innerText = isMyTurn ? '내 턴! 윷 던지기' : `${currentTurn.nickname} 턴 대기 중...`;
+      }
+    }
+  </script>
+</body>
+</html>
