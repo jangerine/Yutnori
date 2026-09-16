@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 윷놀이 (드래그 앤 드롭 이동)</title>
+  <title>실시간 윷놀이 (자유 이동)</title>
   <style>
     body { font-family: 'Noto Sans KR', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; user-select: none; }
     .card { background: white; max-width: 500px; margin: 0 auto 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
@@ -137,29 +137,27 @@
 
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
 
+    // --- [복구된 3D 윷 연출 영역] ---
     let yutScene, yutCamera, yutRenderer;
     let yutMeshes = [];
-    const stickPosX = [-1.8, -0.6, 0.6, 1.8];
+    let isAnimatingYut = false;
+    const stickPosX = [-1.5, -0.5, 0.5, 1.5];
 
     function createYutMesh(isBackDo = false) {
       const group = new THREE.Group();
-      const shape = new THREE.Shape();
-      const r = 0.48;
-      shape.moveTo(-r, 0); shape.lineTo(r, 0); shape.absarc(0, 0, r, 0, Math.PI, false);
-      const extrudeSettings = { depth: 2.8, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.05, bevelThickness: 0.05 };
-      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-      geometry.center();
-      const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.5 });
-      group.add(new THREE.Mesh(geometry, woodMaterial));
+      const geometry = new THREE.CylinderGeometry(0.35, 0.35, 2.2, 16, 1, false, 0, Math.PI);
+      const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.4 });
+      const flatMaterial = new THREE.MeshStandardMaterial({ color: 0xF5DEB3, roughness: 0.6 });
+      
+      const mesh = new THREE.Mesh(geometry, [woodMaterial, flatMaterial]);
+      mesh.rotation.z = Math.PI / 2;
+      group.add(mesh);
 
       if (isBackDo) {
         const markMat = new THREE.MeshBasicMaterial({ color: 0xcc0000 });
-        const markGroup = new THREE.Group();
-        const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.6), markMat); bar1.rotation.y = Math.PI / 4;
-        const bar2 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.6), markMat); bar2.rotation.y = -Math.PI / 4;
-        markGroup.add(bar1); markGroup.add(bar2);
-        markGroup.position.set(0, 0.01, 0);
-        group.add(markGroup);
+        const mark = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.02), markMat);
+        mark.position.set(0, 0, 0.36);
+        group.add(mark);
       }
       return group;
     }
@@ -167,11 +165,12 @@
     function init3DYut() {
       const container = document.getElementById('yut-3d-container');
       yutScene = new THREE.Scene();
-      yutCamera = new THREE.OrthographicCamera(-3.2, 3.2, 3.2, -3.2, 0.1, 100);
-      yutCamera.position.set(0, 10, 0);
-      yutCamera.lookAt(0, 0, 0);
+      yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+      yutCamera.position.set(0, 0, 6);
 
-      yutScene.add(new THREE.DirectionalLight(0xffffff, 1.4));
+      const light1 = new THREE.DirectionalLight(0xffffff, 1.2);
+      light1.position.set(2, 4, 5);
+      yutScene.add(light1);
       yutScene.add(new THREE.AmbientLight(0xffffff, 0.7));
 
       yutRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -184,6 +183,18 @@
         yutScene.add(mesh);
         yutMeshes.push(mesh);
       }
+
+      function renderLoop() {
+        requestAnimationFrame(renderLoop);
+        if (isAnimatingYut) {
+          yutMeshes.forEach(m => {
+            m.rotation.x += 0.2;
+            m.rotation.y += 0.15;
+          });
+        }
+        yutRenderer.render(yutScene, yutCamera);
+      }
+      renderLoop();
     }
     init3DYut();
 
@@ -191,11 +202,28 @@
       const modal = document.getElementById('yut-3d-modal');
       document.getElementById('yut-3d-text').innerText = `[ ${result} ] !`;
       modal.style.display = 'flex';
+      isAnimatingYut = true;
+
+      // 결과값 세팅 (평평한 면 vs 구부러진 면)
+      const flatCounts = { '빽도': 1, '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 0 };
+      const targetFlatCount = flatCounts[result] !== undefined ? flatCounts[result] : 1;
 
       setTimeout(() => {
-        modal.style.display = 'none';
-        if (callback) callback();
-      }, 1000);
+        isAnimatingYut = false;
+        yutMeshes.forEach((m, idx) => {
+          m.rotation.set(0, 0, 0);
+          if (idx < targetFlatCount) {
+            m.rotation.x = Math.PI; // 평평한 면
+          } else {
+            m.rotation.x = 0; // 둥근 면
+          }
+        });
+
+        setTimeout(() => {
+          modal.style.display = 'none';
+          if (callback) callback();
+        }, 800);
+      }, 700);
     }
 
     socket.on('connect', () => { myId = socket.id; });
