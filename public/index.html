@@ -145,59 +145,52 @@
 
     // --- 3D 윷 시스템 ---
     let yutScene, yutCamera, yutRenderer;
-    let yutGroups = [];
+    let yutMeshes = [];
     const stickPosX = [-1.8, -0.6, 0.6, 1.8];
 
     function createYutMesh() {
       const shape = new THREE.Shape();
-      const radius = 0.38;
+      const r = 0.45;
       
-      shape.absarc(0, 0, radius, 0, Math.PI, false);
-      shape.lineTo(-radius, 0);
+      shape.moveTo(-r, 0);
+      shape.lineTo(r, 0);
+      shape.absarc(0, 0, r, 0, Math.PI, false);
 
       const extrudeSettings = {
-        depth: 2.8,
+        depth: 2.6,
         bevelEnabled: true,
         bevelSegments: 3,
         steps: 1,
-        bevelSize: 0.04,
-        bevelThickness: 0.04
+        bevelSize: 0.03,
+        bevelThickness: 0.03
       };
 
       const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
       geometry.center();
 
       const woodMaterial = new THREE.MeshStandardMaterial({
-        color: 0xc48546,
-        roughness: 0.4,
+        color: 0xd29054,
+        roughness: 0.3,
         metalness: 0.05
       });
 
-      const mesh = new THREE.Mesh(geometry, woodMaterial);
-      mesh.rotation.x = -Math.PI / 2;
-
-      const group = new THREE.Group();
-      group.add(mesh);
-
-      return group;
+      return new THREE.Mesh(geometry, woodMaterial);
     }
 
     function init3DYut() {
       const container = document.getElementById('yut-3d-container');
       yutScene = new THREE.Scene();
 
-      // [수직 완전 탑다운 뷰 카메라]
-      yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-      yutCamera.position.set(0, 8, 0); // 정중앙 상단 직위
+      // [완전 직교 수직 탑다운 카메라]
+      const aspect = 1;
+      const d = 3.2;
+      yutCamera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 100);
+      yutCamera.position.set(0, 10, 0);
       yutCamera.lookAt(0, 0, 0);
 
       const mainLight = new THREE.DirectionalLight(0xffffff, 1.3);
-      mainLight.position.set(2, 10, 2);
+      mainLight.position.set(0, 10, 3);
       yutScene.add(mainLight);
-
-      const fillLight = new THREE.DirectionalLight(0xffd1a4, 0.4);
-      fillLight.position.set(-5, 5, -5);
-      yutScene.add(fillLight);
 
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
       yutScene.add(ambientLight);
@@ -208,10 +201,10 @@
       container.appendChild(yutRenderer.domElement);
 
       for (let i = 0; i < 4; i++) {
-        const yutGroup = createYutMesh();
-        yutGroup.position.x = stickPosX[i];
-        yutScene.add(yutGroup);
-        yutGroups.push(yutGroup);
+        const mesh = createYutMesh();
+        mesh.position.x = stickPosX[i];
+        yutScene.add(mesh);
+        yutMeshes.push(mesh);
       }
     }
     init3DYut();
@@ -252,9 +245,9 @@
       else if (style === 'spin') { rotSpeedMult = 2.2; }
       else if (style === 'gentle') { jumpHeight = 1.2; rotSpeedMult = 0.6; duration = 1200; }
 
-      const stickConfigs = yutGroups.map(() => ({
+      const stickConfigs = yutMeshes.map(() => ({
         totalRotX: (Math.floor(Math.random() * 3) + 4) * Math.PI * 2 * rotSpeedMult,
-        totalRotZ: (Math.random() - 0.5) * 1.5 * rotSpeedMult,
+        totalRotZ: (Math.random() - 0.5) * 0.5 * rotSpeedMult,
         offsetY: (Math.random() - 0.5) * 0.2
       }));
 
@@ -266,28 +259,30 @@
 
         if (progress > 1) progress = 1;
 
-        yutGroups.forEach((group, idx) => {
+        yutMeshes.forEach((mesh, idx) => {
           const cfg = stickConfigs[idx];
-          group.position.x = stickPosX[idx];
+          mesh.position.x = stickPosX[idx];
 
           if (progress < 0.85) {
             let p = progress / 0.85;
-            group.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
+            mesh.position.y = Math.sin(p * Math.PI) * (jumpHeight + cfg.offsetY);
 
-            group.rotation.x = p * cfg.totalRotX;
-            group.rotation.z = p * cfg.totalRotZ;
-            group.rotation.y = 0;
+            mesh.rotation.x = p * cfg.totalRotX;
+            mesh.rotation.z = p * cfg.totalRotZ;
+            mesh.rotation.y = 0;
           } else {
             let settleP = (progress - 0.85) / 0.15;
             let easeOut = 1 - Math.pow(1 - settleP, 3);
 
-            group.position.y = 0;
-            group.rotation.z *= (1 - easeOut);
-            group.rotation.y = 0;
+            mesh.position.y = 0;
+            mesh.rotation.y = 0;
+            mesh.rotation.z = 0; // 옆면으로 기울어지는 축 고정
 
-            let targetRotX = isFlatTarget[idx] ? 0 : Math.PI;
-            let currentRotX = group.rotation.x % (Math.PI * 2);
-            group.rotation.x = THREE.MathUtils.lerp(currentRotX, targetRotX, easeOut);
+            // [착지 결정]: 배(평평한 면) = Math.PI (하늘 바라봄)
+            //             등(볼록한 면) = 0 (바닥 바라봄)
+            let targetRotX = isFlatTarget[idx] ? Math.PI : 0;
+            let currentRotX = mesh.rotation.x % (Math.PI * 2);
+            mesh.rotation.x = THREE.MathUtils.lerp(currentRotX, targetRotX, easeOut);
           }
         });
 
