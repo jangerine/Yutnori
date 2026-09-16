@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+￦<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -15,12 +15,47 @@
     .player-list { text-align: left; background: #fafafa; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; }
     .active-turn { font-weight: bold; color: #007bff; }
     #game-area { display: none; }
+
+    /* --- 3D 윷 던지기 오버레이 스타일 --- */
+    #yut-3d-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 999;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+    #yut-3d-container {
+      width: 320px;
+      height: 320px;
+      background: #e0cfb3;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+      overflow: hidden;
+    }
+    #yut-3d-text {
+      color: #fff;
+      font-size: 28px;
+      font-weight: bold;
+      margin-top: 15px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    }
   </style>
+  <!-- Three.js 3D 라이브러리 CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.min.js"></script>
 </head>
 <body>
 
+  <!-- 3D 윷 애니메이션 팝업 창 -->
+  <div id="yut-3d-modal">
+    <div id="yut-3d-container"></div>
+    <div id="yut-3d-text">윷 던지는 중...</div>
+  </div>
+
   <div class="card" id="login-area">
-    <h2>🎲 실시간 윷놀이</h2>
+    <h2>🎲 실시간 윷놀이 (3D)</h2>
     <input type="text" id="nickname" placeholder="닉네임 입력" maxlength="8"><br>
     <input type="text" id="room-id" placeholder="방 코드 입력"><br>
     <button onclick="joinRoom()">입장하기</button>
@@ -66,36 +101,30 @@
 
     const boardCoords = [
       { x: 0, y: 0 },
-      // 1 ~ 4: 도, 개, 걸, 윷
       { x: S + L, y: S + L - step * 1 },
       { x: S + L, y: S + L - step * 2 },
       { x: S + L, y: S + L - step * 3 },
       { x: S + L, y: S + L - step * 4 },
-      // 5 ~ 9: 모(우상단 모서리), 위쪽 변
       { x: S + L,          y: S },
       { x: S + L - step * 1, y: S },
       { x: S + L - step * 2, y: S },
       { x: S + L - step * 3, y: S },
       { x: S + L - step * 4, y: S },
-      // 10 ~ 14: 왼쪽 변 (10: 좌상단 모서리)
       { x: S, y: S },
       { x: S, y: S + step * 1 },
       { x: S, y: S + step * 2 },
       { x: S, y: S + step * 3 },
       { x: S, y: S + step * 4 },
-      // 15 ~ 19: 아래쪽 변 (15: 좌하단 모서리)
       { x: S,            y: S + L },
       { x: S + step * 1, y: S + L },
       { x: S + step * 2, y: S + L },
       { x: S + step * 3, y: S + L },
       { x: S + step * 4, y: S + L },
-      // 20 ~ 24: 대각선 1 (5번 우상단 -> 14번 방향)
       { x: S + L - step * 1,   y: S + step * 1 },
       { x: S + L - step * 1.8, y: S + step * 1.8 },
-      { x: center, y: center }, // 22: 중앙 (방아깨비)
+      { x: center, y: center },
       { x: S + step * 1.8,     y: S + L - step * 1.8 },
       { x: S + step * 1,       y: S + L - step * 1 },
-      // 25 ~ 28: 대각선 2 (10번 좌상단 -> 19번 방향)
       { x: S + step * 1,       y: S + step * 1 },
       { x: S + step * 1.8,     y: S + step * 1.8 },
       { x: S + L - step * 1.8, y: S + L - step * 1.8 },
@@ -103,6 +132,115 @@
     ];
 
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
+
+    // --- Three.js 3D 윷 연출 시스템 초기화 ---
+    let yutScene, yutCamera, yutRenderer, yutSticks = [];
+    let isAnimatingYut = false;
+
+    function init3DYut() {
+      const container = document.getElementById('yut-3d-container');
+      yutScene = new THREE.Scene();
+      yutScene.background = new THREE.Color(0xe0cfb3);
+
+      yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+      yutCamera.position.set(0, 12, 10);
+      yutCamera.lookAt(0, 0, 0);
+
+      const light1 = new THREE.DirectionalLight(0xffffff, 1);
+      light1.position.set(5, 10, 7);
+      yutScene.add(light1);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      yutScene.add(ambientLight);
+
+      yutRenderer = new THREE.WebGLRenderer({ antialias: true });
+      yutRenderer.setSize(320, 320);
+      container.appendChild(yutRenderer.domElement);
+
+      // 윷 가락 4개 생성 (반원 기둥 모양)
+      const stickGeo = new THREE.CylinderGeometry(0.3, 0.3, 3, 16, 1, false, 0, Math.PI);
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0xd2a679, roughness: 0.4 });
+      const flatMat = new THREE.MeshStandardMaterial({ color: 0xfff8dc, roughness: 0.2 });
+
+      const offsets = [-1.2, -0.4, 0.4, 1.2];
+      for (let i = 0; i < 4; i++) {
+        const group = new THREE.Group();
+        
+        // 둥근 등 부분
+        const roundMesh = new THREE.Mesh(stickGeo, woodMat);
+        group.add(roundMesh);
+
+        // 평평한 배 부분
+        const flatGeo = new THREE.PlaneGeometry(0.6, 3);
+        const flatMesh = new THREE.Mesh(flatGeo, flatMat);
+        flatMesh.rotation.y = Math.PI / 2;
+        group.add(flatMesh);
+
+        group.position.x = offsets[i];
+        yutScene.add(group);
+        yutSticks.push(group);
+      }
+    }
+    init3DYut();
+
+    // 3D 윷 던지기 연출 함수
+    function animate3DYut(result, callback) {
+      const modal = document.getElementById('yut-3d-modal');
+      const text = document.getElementById('yut-3d-text');
+      modal.style.display = 'flex';
+      text.innerText = "윷 던지는 중...";
+
+      // 결과에 따른 평평한 면(배) 수 결정 (도:1, 개:2, 걸:3, 윷:4, 모:0)
+      const flatCountMap = { '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 0 };
+      const flatCount = flatCountMap[result] ?? 0;
+
+      // 4개 중 몇 번째 가락이 배(평평한 면)를 위로 할지 지정
+      const isFlatTarget = [false, false, false, false];
+      let assigned = 0;
+      while (assigned < flatCount) {
+        let idx = Math.floor(Math.random() * 4);
+        if (!isFlatTarget[idx]) {
+          isFlatTarget[idx] = true;
+          assigned++;
+        }
+      }
+
+      let startTime = performance.now();
+      let duration = 1200; // 애니메이션 시간 (1.2초)
+
+      function renderFrame(now) {
+        let progress = (now - startTime) / duration;
+        if (progress > 1) progress = 1;
+
+        yutSticks.forEach((stick, idx) => {
+          if (progress < 0.7) {
+            // 던져져서 회전 및 바운스
+            stick.position.y = Math.sin(progress / 0.7 * Math.PI) * 4;
+            stick.rotation.x += 0.3;
+            stick.rotation.z += 0.2;
+          } else {
+            // 바닥에 안착 (결과 각도로 회전 착지)
+            stick.position.y = 0;
+            let targetRotZ = isFlatTarget[idx] ? Math.PI / 2 : -Math.PI / 2; // 평평한 면 / 둥근 면
+            stick.rotation.x = 0;
+            stick.rotation.z = targetRotZ;
+          }
+        });
+
+        yutRenderer.render(yutScene, yutCamera);
+
+        if (progress < 1) {
+          requestAnimationFrame(renderFrame);
+        } else {
+          text.innerText = `[ ${result} ] !`;
+          setTimeout(() => {
+            modal.style.display = 'none';
+            if (callback) callback();
+          }, 800);
+        }
+      }
+
+      requestAnimationFrame(renderFrame);
+    }
 
     socket.on('connect', () => { myId = socket.id; });
 
@@ -141,18 +279,21 @@
     });
 
     socket.on('yutResult', ({ player, result }) => {
-      isYutOrMoResult = (result === '윷' || result === '모');
-      let extraText = isYutOrMoResult ? ' 🎉 [한 번 더 던지기 획득!]' : '';
-      
-      document.getElementById('result-box').innerText = `${player.nickname}: [ ${result} ]!${extraText} 말을 고르세요.`;
-      currentLastResultSteps = yutStepMap[result];
-      selectedTokenIndex = null;
-      targetBoardPos = null;
+      // 3D 윷 던지기 연출 시작
+      animate3DYut(result, () => {
+        isYutOrMoResult = (result === '윷' || result === '모');
+        let extraText = isYutOrMoResult ? ' 🎉 [한 번 더 던지기 획득!]' : '';
+        
+        document.getElementById('result-box').innerText = `${player.nickname}: [ ${result} ]!${extraText} 말을 고르세요.`;
+        currentLastResultSteps = yutStepMap[result];
+        selectedTokenIndex = null;
+        targetBoardPos = null;
 
-      if (player.id === myId) {
-        canMoveToken = true;
-        document.getElementById('throw-btn').disabled = true;
-      }
+        if (player.id === myId) {
+          canMoveToken = true;
+          document.getElementById('throw-btn').disabled = true;
+        }
+      });
     });
 
     socket.on('tokenMoved', ({ tokens, nextTurn, caughtOpponent, hasExtraTurn }) => {
@@ -175,10 +316,8 @@
       drawBoard();
     });
 
-    // --- 정확한 도착지 미리보기 연산 ---
     function calculateTargetPos(currentPos, steps) {
       if (currentPos === 0) return steps;
-      
       if (currentPos === 5) return 19 + steps;
       if (currentPos === 10) return 24 + steps;
       if (currentPos === 22) {
@@ -267,7 +406,6 @@
         ctx.stroke();
       }
 
-      // 우하단 출발 모서리점
       ctx.beginPath();
       ctx.arc(S + L, S + L, 12, 0, Math.PI * 2);
       ctx.fillStyle = '#e67e22';
