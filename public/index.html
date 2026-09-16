@@ -170,7 +170,6 @@
       const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
       geometry.center();
 
-      // 클래식 목재 재질
       const woodMaterial = new THREE.MeshStandardMaterial({
         color: 0x8B4513,
         roughness: 0.5,
@@ -180,7 +179,6 @@
       const yutBody = new THREE.Mesh(geometry, woodMaterial);
       group.add(yutBody);
 
-      // 첫 번째 윷가락에 빽도(X) 각인 추가
       if (isBackDo) {
         const markMat = new THREE.MeshBasicMaterial({ color: 0xcc0000 });
         const markGroup = new THREE.Group();
@@ -196,7 +194,6 @@
         markGroup.add(bar1);
         markGroup.add(bar2);
         
-        // 평평한 배 부분 표면에 밀착 배치
         markGroup.position.set(0, 0.01, 0);
         group.add(markGroup);
       }
@@ -227,7 +224,7 @@
       container.appendChild(yutRenderer.domElement);
 
       for (let i = 0; i < 4; i++) {
-        const mesh = createYutMesh(i === 0); // 0번 윷가락에 빽도 표식
+        const mesh = createYutMesh(i === 0);
         mesh.position.x = stickPosX[i];
         yutScene.add(mesh);
         yutMeshes.push(mesh);
@@ -253,7 +250,7 @@
       const isFlatTarget = [false, false, false, false];
 
       if (result === '빽도') {
-        isFlatTarget[0] = true; // 첫 번째(빽도) 윷만 배가 나옴
+        isFlatTarget[0] = true;
       } else {
         const flatCountMap = { '도': 1, '개': 2, '걸': 3, '윷': 4, '모': 0 };
         const flatCount = flatCountMap[result] ?? 0;
@@ -261,7 +258,7 @@
         let assigned = 0;
         while (assigned < flatCount) {
           let idx = Math.floor(Math.random() * 4);
-          if (result === '도' && idx === 0) continue; // 일반 '도'일 때는 빽도 윷 제외
+          if (result === '도' && idx === 0) continue;
 
           if (!isFlatTarget[idx]) {
             isFlatTarget[idx] = true;
@@ -411,29 +408,28 @@
       drawBoard();
     });
 
+    // --- [이동 경로 계산 핵심 수정 부분] ---
     function calculateTargetPos(currentPos, steps) {
       if (steps === -1) {
-        // 빽도 처리
-        if (currentPos === 0) return 0; // 시작점 대기 중인 말은 빽도 불가능
-        if (currentPos === 1) return 20; // 1번 위치에서 빽도 시 출구 전 칸(20번)
+        if (currentPos === 0) return 0;
+        if (currentPos === 1) return 20;
         if (currentPos === 21) return 5;
         if (currentPos === 26) return 10;
+        if (currentPos === 27) return 22;
         return currentPos - 1;
       }
 
       if (currentPos === 0) return steps;
+
       if (currentPos === 5) return 19 + steps;
       if (currentPos === 10) return 24 + steps;
-      if (currentPos === 22) {
-        let pos = 26 + steps;
-        return pos > 28 ? 19 + (pos - 28) : pos;
-      }
 
       let pos = currentPos;
       for (let i = 0; i < steps; i++) {
+        if (pos === 22) { pos = 27; continue; }  // 중앙(22)에서는 대각선 아래(27)로 정상 진행
         if (pos === 19) { pos = 14; continue; }
         if (pos === 24) { pos = 14; continue; }
-        if (pos === 28) { pos = 19; continue; }
+        if (pos === 28) { pos = 19; continue; }  // 대각선 끝에서 출구 모서리로 진입
         pos++;
       }
 
