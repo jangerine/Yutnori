@@ -137,31 +137,34 @@
       yutScene = new THREE.Scene();
       yutScene.background = new THREE.Color(0xe0cfb3);
 
+      // 📷 카메라 시점을 탑뷰에 가깝게 위로 대폭 높임 (Y: 16, Z: 3)
       yutCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-      yutCamera.position.set(0, 12, 10);
+      yutCamera.position.set(0, 16, 3);
       yutCamera.lookAt(0, 0, 0);
 
-      const light1 = new THREE.DirectionalLight(0xffffff, 1);
-      light1.position.set(5, 10, 7);
+      // 💡 직상단 조명 강화로 평평한 면과 둥근 면의 음영차 극대화
+      const light1 = new THREE.DirectionalLight(0xffffff, 1.2);
+      light1.position.set(0, 20, 5);
       yutScene.add(light1);
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       yutScene.add(ambientLight);
 
       yutRenderer = new THREE.WebGLRenderer({ antialias: true });
       yutRenderer.setSize(320, 320);
       container.appendChild(yutRenderer.domElement);
 
-      const stickGeo = new THREE.CylinderGeometry(0.3, 0.3, 3, 16, 1, false, 0, Math.PI);
-      const woodMat = new THREE.MeshStandardMaterial({ color: 0xd2a679, roughness: 0.4 });
-      const flatMat = new THREE.MeshStandardMaterial({ color: 0xfff8dc, roughness: 0.2 });
+      const stickGeo = new THREE.CylinderGeometry(0.35, 0.35, 3.2, 16, 1, false, 0, Math.PI);
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0xc48c58, roughness: 0.5 }); // 등(나무 색)
+      const flatMat = new THREE.MeshStandardMaterial({ color: 0xfffae6, roughness: 0.2 }); // 배(밝은 색)
 
-      const offsets = [-1.2, -0.4, 0.4, 1.2];
+      const offsets = [-1.3, -0.45, 0.45, 1.3];
       for (let i = 0; i < 4; i++) {
         const group = new THREE.Group();
         const roundMesh = new THREE.Mesh(stickGeo, woodMat);
         group.add(roundMesh);
 
-        const flatGeo = new THREE.PlaneGeometry(0.6, 3);
+        const flatGeo = new THREE.PlaneGeometry(0.7, 3.2);
         const flatMesh = new THREE.Mesh(flatGeo, flatMat);
         flatMesh.rotation.y = Math.PI / 2;
         group.add(flatMesh);
@@ -405,12 +408,10 @@
       ctx.font = '12px sans-serif';
       ctx.fillText('대기 중인 말 (클릭하여 선택)', 20, 375);
 
-      // 🔥 말 카운트 및 업은 말 겹쳐서 시각화하기 🔥
       playersData.forEach((player) => {
         const pTokens = tokensData[player.id] || [0, 0, 0, 0];
         const color = playerColors[player.number] || '#e74c3c';
 
-        // 위치별 몇 개의 말이 겹쳐있는지 계산
         const posCounts = {};
         pTokens.forEach(p => {
           if (p > 0 && p < 30) posCounts[p] = (posCounts[p] || 0) + 1;
@@ -429,7 +430,6 @@
 
           const isSelected = (player.id === myId && tIdx === selectedTokenIndex);
 
-          // 말 원 그리기
           ctx.beginPath();
           ctx.arc(x, y, isSelected ? 11 : 9, 0, Math.PI * 2);
           ctx.fillStyle = color;
@@ -438,7 +438,6 @@
           ctx.strokeStyle = '#fff';
           ctx.stroke();
 
-          // 🔥 업어진 말이 2개 이상일 때 숫자(x2, x3) 표시 🔥
           if (pos > 0 && pos < 30 && posCounts[pos] > 1) {
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 10px sans-serif';
