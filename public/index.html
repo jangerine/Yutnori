@@ -407,4 +407,28 @@
       }
     }
 
-    function
+    function updateUI(players, currentTurn) {
+      document.getElementById('player-count').innerText = players.length;
+      const listDiv = document.getElementById('players');
+      listDiv.innerHTML = '';
+
+      players.forEach((p) => {
+        const isMe = p.id === myId ? ' (나)' : '';
+        const color = playerColors[p.number] || '#333';
+        const item = document.createElement('div');
+        if (currentTurn && p.id === currentTurn.id) item.className = 'active-turn';
+        
+        item.innerHTML = `<span style="color:${color}; font-weight:bold;">●</span> ${p.number}번. ${p.nickname}${isMe}`;
+        listDiv.appendChild(item);
+      });
+
+      if (currentTurn) {
+        const throwBtn = document.getElementById('throw-btn');
+        const isMyTurn = currentTurn.id === myId;
+        throwBtn.disabled = !isMyTurn || canMoveToken;
+        throwBtn.innerText = isMyTurn ? '내 턴! 윷 던지기' : `${currentTurn.nickname} 턴 대기 중...`;
+      }
+    }
+  </script>
+</body>
+</html>
