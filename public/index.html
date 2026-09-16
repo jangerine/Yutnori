@@ -90,7 +90,6 @@
     let playersData = [];
     let tokensData = {};
 
-    // 드래그 상태 정보
     let isDragging = false;
     let draggedTokenIndex = null;
     let dragPos = { x: 0, y: 0 };
@@ -133,12 +132,11 @@
       { x: S + step * 1.8,     y: S + step * 1.8 },
       { x: S + L - step * 1.8, y: S + L - step * 1.8 },
       { x: S + L - step * 1,   y: S + L - step * 1 },
-      { x: S + L, y: S + L } // 30: 완주 지점
+      { x: S + L, y: S + L }
     ];
 
     const playerColors = { 1: '#e74c3c', 2: '#3498db', 3: '#2ecc71', 4: '#f1c40f' };
 
-    // --- [3D 윷 연출 영역] ---
     let yutScene, yutCamera, yutRenderer;
     let yutMeshes = [];
     const stickPosX = [-1.8, -0.6, 0.6, 1.8];
@@ -230,8 +228,14 @@
       updateUI(players, currentTurn); drawBoard();
     });
 
-    socket.on('yutResult', ({ player, result, style }) => {
+    socket.on('yutResult', ({ player, result, style, noValidMove }) => {
       animate3DYut(result, style || 'normal', () => {
+        if (noValidMove) {
+          document.getElementById('result-box').innerText = `⚠️ ${player.nickname}: [ 빽도 ] ! 움직일 수 있는 말이 없어 턴이 넘어갑니다.`;
+          canMoveToken = false;
+          return;
+        }
+
         isYutOrMoResult = (result === '윷' || result === '모');
         document.getElementById('result-box').innerText = `${player.nickname}: [ ${result} ]! 말을 드래그해서 원하는 위치로 옮기세요.`;
 
@@ -242,20 +246,28 @@
       });
     });
 
-    socket.on('tokenMoved', ({ tokens, nextTurn, caughtOpponent, hasExtraTurn }) => {
+    socket.on('tokenMoved', ({ tokens, nextTurn, caughtOpponent, hasExtraTurn, skipReason }) => {
       tokensData = tokens;
       canMoveToken = false;
       isDragging = false;
       draggedTokenIndex = null;
 
-      let msg = caughtOpponent ? '💥 상대 말을 잡았습니다! [한 번 더!]' : (hasExtraTurn ? '✨ 한 번 더 던질 기회!' : `${nextTurn.nickname} 님의 턴입니다.`);
-      document.getElementById('result-box').innerText = msg;
+      let msg = '';
+      if (skipReason) {
+        msg = `⚠️ ${skipReason}`;
+      } else if (caughtOpponent) {
+        msg = '💥 상대 말을 잡았습니다! [한 번 더!]';
+      } else if (hasExtraTurn) {
+        msg = '✨ 한 번 더 던질 기회!';
+      } else {
+        msg = `${nextTurn.nickname} 님의 턴입니다.`;
+      }
 
+      document.getElementById('result-box').innerText = msg;
       updateUI(playersData, nextTurn);
       drawBoard();
     });
 
-    // --- [드래그 앤 드롭 이벤트 핸들러] ---
     canvas.addEventListener('mousedown', (e) => {
       if (!canMoveToken) return;
 
@@ -293,11 +305,9 @@
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      // 가장 가까운 노드 위치 탐색
       let closestPos = -1;
-      let minDistance = 35; // 감지 반경
+      let minDistance = 35;
 
-      // 1~30번 판 위 노드 검사
       for (let i = 1; i <= 30; i++) {
         const coord = boardCoords[i];
         if (coord) {
@@ -309,7 +319,6 @@
         }
       }
 
-      // 대기실 영역 검사 (y > 360)
       if (mouseY > 360) closestPos = 0;
 
       if (closestPos !== -1) {
@@ -319,7 +328,6 @@
           isYutOrMoResult: isYutOrMoResult
         });
       } else {
-        // 유효한 드롭 위치가 아니면 드래그 취소
         isDragging = false;
         draggedTokenIndex = null;
         drawBoard();
@@ -339,7 +347,6 @@
 
       const bigPoints = [5, 10, 15, 22];
 
-      // 판 위 노드 그리기
       for (let i = 1; i <= 30; i++) {
         const pt = boardCoords[i];
         if (!pt) continue;
@@ -354,20 +361,18 @@
         ctx.stroke();
       }
 
-      // 대기실 배경
       ctx.fillStyle = '#eaeaea';
       ctx.fillRect(10, 360, 340, 55);
       ctx.fillStyle = '#555';
       ctx.font = '12px sans-serif';
       ctx.fillText('대기실 (말을 판 위로 드래그하세요)', 20, 375);
 
-      // 말 그리기
       playersData.forEach((player) => {
         const pTokens = tokensData[player.id] || [0, 0, 0, 0];
         const color = playerColors[player.number] || '#e74c3c';
 
         pTokens.forEach((pos, tIdx) => {
-          if (isDragging && player.id === myId && tIdx === draggedTokenIndex) return; // 드래그 중인 말은 따로 처리
+          if (isDragging && player.id === myId && tIdx === draggedTokenIndex) return;
 
           let x = 0, y = 0;
           if (pos === 0) {
@@ -388,7 +393,6 @@
         });
       });
 
-      // 드래그 중인 말 따로 그리기 (마우스 커서 위치)
       if (isDragging && draggedTokenIndex !== null) {
         const myPlayer = playersData.find(p => p.id === myId);
         const color = myPlayer ? playerColors[myPlayer.number] : '#e74c3c';
@@ -403,28 +407,4 @@
       }
     }
 
-    function updateUI(players, currentTurn) {
-      document.getElementById('player-count').innerText = players.length;
-      const listDiv = document.getElementById('players');
-      listDiv.innerHTML = '';
-
-      players.forEach((p) => {
-        const isMe = p.id === myId ? ' (나)' : '';
-        const color = playerColors[p.number] || '#333';
-        const item = document.createElement('div');
-        if (currentTurn && p.id === currentTurn.id) item.className = 'active-turn';
-        
-        item.innerHTML = `<span style="color:${color}; font-weight:bold;">●</span> ${p.number}번. ${p.nickname}${isMe}`;
-        listDiv.appendChild(item);
-      });
-
-      if (currentTurn) {
-        const throwBtn = document.getElementById('throw-btn');
-        const isMyTurn = currentTurn.id === myId;
-        throwBtn.disabled = !isMyTurn || canMoveToken;
-        throwBtn.innerText = isMyTurn ? '내 턴! 윷 던지기' : `${currentTurn.nickname} 턴 대기 중...`;
-      }
-    }
-  </script>
-</body>
-</html>
+    function
